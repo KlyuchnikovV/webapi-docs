@@ -6,15 +6,21 @@ import (
 	"go/ast"
 	goParser "go/parser"
 	"go/token"
+	"os"
 
 	"github.com/KlyuchnikovV/webapi-docs/parser"
 )
 
 func main() {
+	if len(os.Args) < 2 {
+		fmt.Printf("File path must be provided\n")
+		os.Exit(1)
+	}
+
 	fset := token.NewFileSet() // positions are relative to fset
 
 	// Parse src but stop after processing the imports.
-	f, err := goParser.ParseFile(fset, "../webapi/example/service/request.go", nil, goParser.AllErrors)
+	f, err := goParser.ParseFile(fset, os.Args[1], nil, goParser.AllErrors)
 	if err != nil {
 		fmt.Println(err)
 		return

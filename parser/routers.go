@@ -3,13 +3,15 @@ package parser
 import (
 	"fmt"
 	"go/ast"
+
+	"github.com/KlyuchnikovV/webapi-docs/types"
 )
 
 var FuncHandlers = map[string]func(*File, ast.FuncDecl) error{
-	"Routers": (*File).GetRoutes,
+	"Routers": (*File).ParseRoutes,
 }
 
-func (f *File) GetRoutes(funcDecl ast.FuncDecl) error {
+func (f *File) ParseRoutes(funcDecl ast.FuncDecl) error {
 	err := CheckFuncDeclaration(
 		funcDecl,
 		"Routers",
@@ -120,6 +122,10 @@ func (f *File) parseRoutes(expressions []ast.Expr) error {
 		method, path, route, err := f.ParseRoute(*keyValue)
 		if err != nil {
 			return err
+		}
+
+		if _, ok := f.Paths[path]; !ok {
+			f.Paths[path] = make(map[string]types.Route)
 		}
 
 		f.Paths[path][method] = *route
