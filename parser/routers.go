@@ -3,15 +3,10 @@ package parser
 import (
 	"fmt"
 	"go/ast"
-
-	"github.com/KlyuchnikovV/webapi-docs/types"
+	"path/filepath"
 )
 
-var FuncHandlers = map[string]func(*File, ast.FuncDecl) error{
-	"Routers": (*File).ParseRoutes,
-}
-
-func (f *File) ParseRoutes(funcDecl ast.FuncDecl) error {
+func (parser *Parser) ParseRouters(file ast.File, prefix string, funcDecl ast.FuncDecl) error {
 	err := CheckFuncDeclaration(
 		funcDecl,
 		"Routers",
@@ -41,7 +36,7 @@ func (f *File) ParseRoutes(funcDecl ast.FuncDecl) error {
 			return fmt.Errorf("'Routers' is of wrong return type: %w", err)
 		}
 
-		return f.parseRoutes(compositeLit.Elts)
+		return parser.parseRoutes(file, prefix, compositeLit.Elts)
 	}
 
 	return nil
@@ -112,23 +107,27 @@ func CheckRoutersResultType(resultType ast.Expr) error {
 	return nil
 }
 
-func (f *File) parseRoutes(expressions []ast.Expr) error {
+func (parser *Parser) parseRoutes(file ast.File, servicePrefix string, expressions []ast.Expr) error {
+	servicePrefix = "/" + filepath.Join(parser.apiPrefix, servicePrefix)
+
 	for _, expression := range expressions {
 		keyValue, ok := expression.(*ast.KeyValueExpr)
 		if !ok {
 			return fmt.Errorf("not a key-value")
 		}
 
-		method, path, route, err := f.ParseRoute(*keyValue)
+		method, path, route, err := parser.ParseRoute(file, *keyValue)
 		if err != nil {
 			return err
 		}
 
-		if _, ok := f.Paths[path]; !ok {
-			f.Paths[path] = make(map[string]types.Route)
+		var resultPath = filepath.Join(servicePrefix, path)
+
+		if _, ok := parser.file.Paths[resultPath]; !ok {
+			parser.file.Paths[resultPath] = make(map[string]Route)
 		}
 
-		f.Paths[path][method] = *route
+		parser.file.Paths[resultPath][method] = *route
 	}
 
 	return nil

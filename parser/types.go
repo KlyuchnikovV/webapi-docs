@@ -1,10 +1,17 @@
-package types
+package parser
 
 import (
 	"fmt"
 	"go/ast"
 	"strings"
+
+	"github.com/KlyuchnikovV/webapi-docs/types"
 )
+
+type Server struct {
+	Url         string `json:"url"`
+	Description string `json:"description"`
+}
 
 type Components struct {
 	Schemas       map[string]Schema      `json:"schemas,omitempty"`
@@ -38,7 +45,33 @@ func NewRoute() *Route {
 	}
 }
 
+func (parser *Parser) AddParameter(route *Route, param Parameter) {
+	var (
+		name  string
+		ok    = true
+		saved Parameter
+	)
+
+	for i := 0; ok; i++ {
+		name = fmt.Sprintf("%s-%s-%d", param.NameParam(), param.Type(), i)
+		saved, ok = parser.file.Components.Parameters[name]
+
+		if ok && saved.EqualTo(param) {
+			break
+		}
+	}
+
+	route.Parameters = append(route.Parameters, NewReference(name, "parameters"))
+
+	if saved == nil {
+		parser.file.Components.Parameters[name] = param
+	}
+}
+
 type Parameter interface {
+	NameParam() string
+	Type() string
+	EqualTo(interface{}) bool
 }
 
 type InQueryParameter struct {
@@ -51,12 +84,40 @@ type InQueryParameter struct {
 	Schema      Schema     `json:"schema,omitempty"`
 }
 
+func (i InQueryParameter) NameParam() string {
+	return i.Name
+}
+
+func (i InQueryParameter) Type() string {
+	return i.Schema.SchemaType()
+}
+
+func (i InQueryParameter) EqualTo(p interface{}) bool {
+	typed, ok := p.(InQueryParameter)
+	if !ok {
+		return false
+	}
+
+	if i.Schema != nil && !i.Schema.EqualTo(typed.Schema) {
+		return false
+	}
+
+	if i.RequestBody != nil && !i.RequestBody.EqualTo(typed.RequestBody) {
+		return false
+	}
+
+	return typed.In == i.In &&
+		typed.Name == i.Name &&
+		typed.Required == i.Required &&
+		typed.Description == i.Description
+}
+
 func NewInQuery(t string, args []ast.Expr) InQueryParameter {
 	var parameter = InQueryParameter{
 		In:       "query",
 		Required: true,
 		Schema: Object{
-			Type: ConvertFieldType(TypeParamsMap[t]),
+			Type: types.ConvertFieldType(types.TypeParamsMap[t]),
 		},
 	}
 
@@ -101,6 +162,78 @@ func NewInQuery(t string, args []ast.Expr) InQueryParameter {
 	return parameter
 }
 
+type InPathParameter struct {
+	In          string     `json:"in"`
+	Name        string     `json:"name"`
+	Required    bool       `json:"required"`
+	Minimum     int        `json:"minimum,omitempty"`
+	Description string     `json:"description,omitempty"`
+	RequestBody *Reference `json:"requestBody,omitempty"`
+	Schema      Schema     `json:"schema,omitempty"`
+}
+
+func (i InPathParameter) NameParam() string {
+	return i.Name
+}
+
+func (i InPathParameter) Type() string {
+	return i.Schema.SchemaType()
+}
+
+func (i InPathParameter) EqualTo(p interface{}) bool {
+	typed, ok := p.(InPathParameter)
+	if !ok {
+		return false
+	}
+
+	if i.Schema != nil && !i.Schema.EqualTo(typed.Schema) {
+		return false
+	}
+
+	if i.RequestBody != nil && !i.RequestBody.EqualTo(typed.RequestBody) {
+		return false
+	}
+
+	return typed.In == i.In &&
+		typed.Name == i.Name &&
+		typed.Required == i.Required &&
+		typed.Description == i.Description
+}
+
+func NewInPath(desc string) InPathParameter {
+	var (
+		param = InPathParameter{
+			In:       "path",
+			Required: true,
+		}
+		nameEnd = strings.IndexRune(desc, '}')
+	)
+	if nameEnd == -1 {
+		panic("something wrong")
+	}
+	param.Name = desc[1:nameEnd]
+
+	if !strings.ContainsRune(desc, '[') {
+		param.Schema = Object{Type: "string"}
+		return param
+	}
+
+	var (
+		typeStart = strings.IndexRune(desc, '[')
+		typeEnd   = strings.IndexRune(desc, ']')
+	)
+
+	if typeStart == -1 || typeEnd == -1 {
+		panic("something wrong")
+	}
+
+	param.Schema = Object{
+		Type: types.ConvertFieldType(desc[typeStart+1 : typeEnd]),
+	}
+
+	return param
+}
+
 type Response struct {
 	Description string      `json:"description"`
 	Schema      interface{} `json:"schema,omitempty"`
@@ -134,47 +267,4 @@ func parseParameterOption(expr *ast.CallExpr) (string, []string) {
 	}
 
 	return name, arguments
-}
-
-func NewInBody(arg ast.Expr) (string, Schema) {
-	var (
-		identifier *ast.Ident
-	)
-
-	switch typed := arg.(type) {
-	case *ast.UnaryExpr:
-		argument, ok := typed.X.(*ast.CompositeLit)
-		if !ok {
-			return "", nil
-		}
-
-		identifier, ok = argument.Type.(*ast.Ident)
-		if !ok {
-			return "", nil
-		}
-	case *ast.CompositeLit:
-		argument, ok := typed.Type.(*ast.ArrayType)
-		if !ok {
-			return "", nil
-		}
-
-		identifier, ok = argument.Elt.(*ast.Ident)
-		if !ok {
-			return "", nil
-		}
-	}
-
-	typeSpec, ok := identifier.Obj.Decl.(*ast.TypeSpec)
-	if !ok {
-		return "", nil
-	}
-
-	switch typed := typeSpec.Type.(type) {
-	case *ast.StructType:
-		return identifier.Name, NewObject(*typed)
-	case *ast.ArrayType:
-		return identifier.Name, NewArray(*typed)
-	}
-
-	return "", nil
 }
