@@ -9,13 +9,13 @@ import (
 )
 
 type Server struct {
-	Url         string `json:"url"`
+	URL         string `json:"url"`
 	Description string `json:"description"`
 }
 
 type Components struct {
 	Schemas       map[string]Schema      `json:"schemas,omitempty"`
-	Parameters    map[string]Parameter   `json:"parameters,omitempty"`
+	Parameters    map[string]IParameter  `json:"parameters,omitempty"`
 	RequestBodies map[string]RequestBody `json:"requestBodies,omitempty"`
 
 	Responses map[string]interface{} `json:"responses,omitempty"`
@@ -28,28 +28,30 @@ type Info struct {
 
 type Route struct {
 	Summary     string           `json:"summary,omitempty"`
-	Parameters  []Parameter      `json:"parameters,omitempty"`
+	Tags        []string         `json:"tags,omitempty"`
+	Parameters  []IParameter     `json:"parameters,omitempty"`
 	RequestBody *Reference       `json:"requestBody,omitempty"`
 	Responses   map[int]Response `json:"responses"`
 }
 
 func NewRoute() *Route {
 	return &Route{
-		Parameters: make([]Parameter, 0),
+		Parameters: make([]IParameter, 0),
 		Responses: map[int]Response{
 			// TODO: Mocked for now
 			200: {
 				Description: "success",
 			},
 		},
+		Tags: make([]string, 0),
 	}
 }
 
-func (parser *Parser) AddParameter(route *Route, param Parameter) {
+func (parser *Parser) AddParameter(route *Route, param IParameter) {
 	var (
 		name  string
 		ok    = true
-		saved Parameter
+		saved IParameter
 	)
 
 	for i := 0; ok; i++ {
@@ -68,13 +70,13 @@ func (parser *Parser) AddParameter(route *Route, param Parameter) {
 	}
 }
 
-type Parameter interface {
+type IParameter interface {
 	NameParam() string
 	Type() string
 	EqualTo(interface{}) bool
 }
 
-type InQueryParameter struct {
+type Parameter struct {
 	In          string     `json:"in"`
 	Name        string     `json:"name"`
 	Required    bool       `json:"required"`
@@ -84,16 +86,16 @@ type InQueryParameter struct {
 	Schema      Schema     `json:"schema,omitempty"`
 }
 
-func (i InQueryParameter) NameParam() string {
+func (i Parameter) NameParam() string {
 	return i.Name
 }
 
-func (i InQueryParameter) Type() string {
+func (i Parameter) Type() string {
 	return i.Schema.SchemaType()
 }
 
-func (i InQueryParameter) EqualTo(p interface{}) bool {
-	typed, ok := p.(InQueryParameter)
+func (i Parameter) EqualTo(p interface{}) bool {
+	typed, ok := p.(Parameter)
 	if !ok {
 		return false
 	}
@@ -112,9 +114,9 @@ func (i InQueryParameter) EqualTo(p interface{}) bool {
 		typed.Description == i.Description
 }
 
-func NewInQuery(t string, args []ast.Expr) InQueryParameter {
-	var parameter = InQueryParameter{
-		In:       "query",
+func NewParameter(paramType string, t string, args []ast.Expr) Parameter {
+	var parameter = Parameter{
+		In:       paramType,
 		Required: true,
 		Schema: Object{
 			Type: types.ConvertFieldType(types.TypeParamsMap[t]),
@@ -160,78 +162,6 @@ func NewInQuery(t string, args []ast.Expr) InQueryParameter {
 	}
 
 	return parameter
-}
-
-type InPathParameter struct {
-	In          string     `json:"in"`
-	Name        string     `json:"name"`
-	Required    bool       `json:"required"`
-	Minimum     int        `json:"minimum,omitempty"`
-	Description string     `json:"description,omitempty"`
-	RequestBody *Reference `json:"requestBody,omitempty"`
-	Schema      Schema     `json:"schema,omitempty"`
-}
-
-func (i InPathParameter) NameParam() string {
-	return i.Name
-}
-
-func (i InPathParameter) Type() string {
-	return i.Schema.SchemaType()
-}
-
-func (i InPathParameter) EqualTo(p interface{}) bool {
-	typed, ok := p.(InPathParameter)
-	if !ok {
-		return false
-	}
-
-	if i.Schema != nil && !i.Schema.EqualTo(typed.Schema) {
-		return false
-	}
-
-	if i.RequestBody != nil && !i.RequestBody.EqualTo(typed.RequestBody) {
-		return false
-	}
-
-	return typed.In == i.In &&
-		typed.Name == i.Name &&
-		typed.Required == i.Required &&
-		typed.Description == i.Description
-}
-
-func NewInPath(desc string) InPathParameter {
-	var (
-		param = InPathParameter{
-			In:       "path",
-			Required: true,
-		}
-		nameEnd = strings.IndexRune(desc, '}')
-	)
-	if nameEnd == -1 {
-		panic("something wrong")
-	}
-	param.Name = desc[1:nameEnd]
-
-	if !strings.ContainsRune(desc, '[') {
-		param.Schema = Object{Type: "string"}
-		return param
-	}
-
-	var (
-		typeStart = strings.IndexRune(desc, '[')
-		typeEnd   = strings.IndexRune(desc, ']')
-	)
-
-	if typeStart == -1 || typeEnd == -1 {
-		panic("something wrong")
-	}
-
-	param.Schema = Object{
-		Type: types.ConvertFieldType(desc[typeStart+1 : typeEnd]),
-	}
-
-	return param
 }
 
 type Response struct {

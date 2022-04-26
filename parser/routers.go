@@ -108,7 +108,7 @@ func CheckRoutersResultType(resultType ast.Expr) error {
 }
 
 func (parser *Parser) parseRoutes(file ast.File, servicePrefix string, expressions []ast.Expr) error {
-	servicePrefix = "/" + filepath.Join(parser.apiPrefix, servicePrefix)
+	var apiPrefix = "/" + filepath.Join(parser.apiPrefix, servicePrefix)
 
 	for _, expression := range expressions {
 		keyValue, ok := expression.(*ast.KeyValueExpr)
@@ -121,7 +121,9 @@ func (parser *Parser) parseRoutes(file ast.File, servicePrefix string, expressio
 			return err
 		}
 
-		var resultPath = filepath.Join(servicePrefix, path)
+		route.Tags = append(route.Tags, servicePrefix)
+
+		var resultPath = filepath.Join(apiPrefix, path)
 
 		if _, ok := parser.file.Paths[resultPath]; !ok {
 			parser.file.Paths[resultPath] = make(map[string]Route)

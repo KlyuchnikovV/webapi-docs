@@ -1,11 +1,11 @@
 package types
 
 var TypeParamsMap = map[string]string{
-	"WithBool":    "bool",
-	"WithTime":    "time",
-	"WithFloat":   "float64",
-	"WithString":  "string",
-	"WithInteger": "int64",
+	"Bool":    "bool",
+	"Time":    "time",
+	"Float":   "float64",
+	"String":  "string",
+	"Integer": "int64",
 }
 
 func ConvertFieldType(t string) string {

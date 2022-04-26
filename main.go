@@ -316,7 +316,7 @@ func (d *engineDef) getVarName(file ast.File, alias string) {
 			}
 
 			d.servers = append(d.servers, parser2.Server{
-				Url: url,
+				URL: url,
 			})
 
 			return false

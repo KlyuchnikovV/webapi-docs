@@ -85,8 +85,22 @@ func (o Object) EqualTo(s interface{}) bool {
 	}
 
 	if len(o.Required) != len(typed.Required) {
-		//  TODO: compare slices
-		return false
+		for _, value := range o.Required {
+			var found bool
+
+			for _, secondValue := range typed.Required {
+				if value == secondValue {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				return false
+			}
+		}
+
+		return true
 	}
 
 	return true
@@ -125,17 +139,17 @@ func (a Array) SchemaType() string {
 	return a.Type
 }
 
-func (o Array) EqualTo(s interface{}) bool {
+func (a Array) EqualTo(s interface{}) bool {
 	typed, ok := s.(Array)
 	if !ok {
 		return false
 	}
 
-	if o.Type != typed.Type {
+	if a.Type != typed.Type {
 		return false
 	}
 
-	return o.Items.EqualTo(typed.Items)
+	return a.Items.EqualTo(typed.Items)
 }
 
 func (parser *Parser) NewArray(t ast.ArrayType) Array {
@@ -162,13 +176,13 @@ func (f Field) SchemaType() string {
 	return f.Type
 }
 
-func (o Field) EqualTo(s interface{}) bool {
+func (f Field) EqualTo(s interface{}) bool {
 	typed, ok := s.(Field)
 	if !ok {
 		return false
 	}
 
-	return o.Type == typed.Type && o.Format == typed.Format
+	return f.Type == typed.Type && f.Format == typed.Format
 }
 
 func (parser *Parser) NewField(ident ast.Ident) Schema {
@@ -208,10 +222,9 @@ func (parser *Parser) NewField(ident ast.Ident) Schema {
 			panic("not handled inner")
 		}
 	default:
+		// return NewReference(ident.Name, "schemas")
 		panic("not handled")
 	}
-
-	return NewReference(ident.Name, "schemas")
 }
 
 type Reference struct {

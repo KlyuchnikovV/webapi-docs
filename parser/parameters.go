@@ -3,7 +3,6 @@ package parser
 import (
 	"fmt"
 	"go/ast"
-	"regexp"
 	"strings"
 )
 
@@ -25,7 +24,7 @@ func NewFile(servers ...Server) *File {
 		Paths:   make(map[string]map[string]Route),
 		Components: Components{
 			Schemas:       make(map[string]Schema),
-			Parameters:    make(map[string]Parameter),
+			Parameters:    make(map[string]IParameter),
 			RequestBodies: make(map[string]RequestBody),
 		},
 	}
@@ -37,11 +36,6 @@ func (parser *Parser) ParseRoute(file ast.File, keyValue ast.KeyValueExpr) (stri
 	callExpression, ok := keyValue.Value.(*ast.CallExpr)
 	if !ok {
 		return "", "", nil, fmt.Errorf("value not a function")
-	}
-
-	var path = extractPath(keyValue.Key)
-	if strings.ContainsAny(path, "{}") {
-		path = parser.ParseInPathParameters(route, path)
 	}
 
 	for i, arg := range callExpression.Args {
@@ -59,20 +53,8 @@ func (parser *Parser) ParseRoute(file ast.File, keyValue ast.KeyValueExpr) (stri
 	}
 
 	return extractMethod(callExpression.Fun),
-		path,
+		extractPath(keyValue.Key),
 		route, nil
-}
-
-func (parser *Parser) ParseInPathParameters(route *Route, path string) string {
-	for _, pathPart := range strings.Split(path, "/") {
-		if !strings.ContainsRune(pathPart, '{') {
-			continue
-		}
-
-		parser.AddParameter(route, NewInPath(pathPart))
-	}
-
-	return regexp.MustCompile(`\[[a-z]+\]`).ReplaceAllString(path, "")
 }
 
 func (parser *Parser) ParseParameter(file ast.File, route *Route, argument ast.CallExpr) error {
@@ -86,7 +68,7 @@ func (parser *Parser) ParseParameter(file ast.File, route *Route, argument ast.C
 	}
 
 	switch selector.Sel.Name {
-	case "WithBody", "WithCustomBody":
+	case "Body", "CustomBody":
 		name, schema := parser.NewInBody(file, argument.Args[0])
 
 		parser.file.Components.Schemas[name] = schema
@@ -94,7 +76,20 @@ func (parser *Parser) ParseParameter(file ast.File, route *Route, argument ast.C
 
 		route.RequestBody = NewReference(name, "requestBodies")
 	default:
-		parser.AddParameter(route, NewInQuery(selector.Sel.Name, argument.Args))
+		var (
+			prefix string
+			name   string
+		)
+
+		if strings.HasPrefix(selector.Sel.Name, "Query") {
+			prefix = "query"
+			name = selector.Sel.Name[strings.Index(selector.Sel.Name, "Query")+len("Query"):]
+		} else if strings.HasPrefix(selector.Sel.Name, "InPath") {
+			prefix = "path"
+			name = selector.Sel.Name[strings.Index(selector.Sel.Name, "InPath")+len("InPath"):]
+		}
+
+		parser.AddParameter(route, NewParameter(prefix, name, argument.Args))
 	}
 
 	return nil
@@ -159,13 +154,12 @@ func (parser *Parser) getTypeSpecification(file ast.File, arg ast.Expr) (string,
 }
 
 func (parser *Parser) findModel(file ast.File, selector ast.SelectorExpr) *ast.TypeSpec {
-	var pkg *ast.Package
-
-	switch typed := selector.X.(type) {
-	case *ast.Ident:
-		pkg = parser.getPackage(file, typed.Name)
+	ident, ok := selector.X.(*ast.Ident)
+	if !ok {
+		return nil
 	}
 
+	var pkg = parser.getPackage(file, ident.Name)
 	if pkg == nil {
 		return nil
 	}
