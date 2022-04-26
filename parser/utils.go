@@ -317,3 +317,19 @@ func NewSelector(prefix, fun string) ast.SelectorExpr {
 		Sel: &ast.Ident{Name: fun},
 	}
 }
+
+func extractMethod(arg ast.Expr) string {
+	if sel, ok := arg.(*ast.SelectorExpr); ok {
+		return strings.ToLower(sel.Sel.Name)
+	}
+
+	return ""
+}
+
+func extractPath(arg ast.Expr) string {
+	if sel, ok := arg.(*ast.BasicLit); ok {
+		return fmt.Sprintf("/%s", strings.Trim(sel.Value, "\"/"))
+	}
+
+	return ""
+}

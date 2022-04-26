@@ -56,7 +56,7 @@ func (parser *Parser) AddParameter(route *Route, param IParameter) {
 
 	for i := 0; ok; i++ {
 		name = fmt.Sprintf("%s-%s-%d", param.NameParam(), param.Type(), i)
-		saved, ok = parser.file.Components.Parameters[name]
+		saved, ok = parser.Spec.Components.Parameters[name]
 
 		if ok && saved.EqualTo(param) {
 			break
@@ -66,7 +66,7 @@ func (parser *Parser) AddParameter(route *Route, param IParameter) {
 	route.Parameters = append(route.Parameters, NewReference(name, "parameters"))
 
 	if saved == nil {
-		parser.file.Components.Parameters[name] = param
+		parser.Spec.Components.Parameters[name] = param
 	}
 }
 

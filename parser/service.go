@@ -5,53 +5,11 @@ import (
 	"go/ast"
 	"strings"
 
-	"github.com/KlyuchnikovV/webapi-docs/interfaces"
+	"github.com/KlyuchnikovV/webapi-docs/types"
 )
 
-type Parser struct {
-	packages map[string]ast.Package
-
-	notFoundImports []string
-
-	file *File
-
-	gopath         string
-	apiPrefix      string
-	loopController map[string]struct{}
-}
-
-func NewParser(path, gopath, prefix string, pkgs map[string]ast.Package, servers ...Server) Parser {
-	var packages = make(map[string]ast.Package, len(pkgs))
-
-	if len(path) > 0 {
-		for name, pkg := range pkgs {
-			var (
-				index   = strings.Index(name, "/")
-				newPath = path
-			)
-
-			if index != -1 {
-				newPath = fmt.Sprintf("%s/%s", path, name[index+1:])
-			}
-
-			packages[newPath] = pkg
-		}
-	} else {
-		packages = pkgs
-	}
-
-	return Parser{
-		packages:        packages,
-		file:            NewFile(servers...),
-		notFoundImports: make([]string, 0),
-		gopath:          gopath,
-		apiPrefix:       prefix,
-		loopController:  make(map[string]struct{}),
-	}
-}
-
-func (parser *Parser) ParseServices(selectors []ast.SelectorExpr) (*File, error) {
-	for _, selector := range selectors {
+func (parser *Parser) ParseServices() error {
+	for _, selector := range parser.services {
 		if selector.Sel == nil {
 			continue
 		}
@@ -69,13 +27,13 @@ func (parser *Parser) ParseServices(selectors []ast.SelectorExpr) (*File, error)
 				}
 
 				if err := parser.ParseService(name, *file, *funcDecl); err != nil {
-					return nil, err
+					return err
 				}
 			}
 		}
 	}
 
-	return parser.file, nil
+	return nil
 }
 
 func (parser *Parser) ParseService(pkg string, file ast.File, funcDecl ast.FuncDecl) error {
@@ -84,14 +42,16 @@ func (parser *Parser) ParseService(pkg string, file ast.File, funcDecl ast.FuncD
 		return err
 	}
 
-	if !parser.Implements(pkg, *typeSpec, interfaces.ServiceInterface()) {
+	var alias = parser.findWebapiImport(file)
+
+	if !parser.Implements(pkg, *typeSpec, types.ServiceInterface(alias)) {
 		return nil
 	}
 
 	return parser.ParseRouters(
 		file,
 		parser.GetPrefix(funcDecl.Body.List),
-		*parser.FindMethod(pkg, *typeSpec, *interfaces.RoutersFuncDecl()),
+		*parser.FindMethod(pkg, *typeSpec, *types.RoutersFuncDecl(alias)),
 	)
 }
 

@@ -213,7 +213,7 @@ func (parser *Parser) NewField(ident ast.Ident) Schema {
 		case *ast.StructType:
 			if _, ok := parser.loopController[ident.Name]; !ok {
 				parser.loopController[ident.Name] = struct{}{}
-				parser.file.Components.Schemas[ident.Name] = parser.NewObject(*t)
+				parser.Spec.Components.Schemas[ident.Name] = parser.NewObject(*t)
 				delete(parser.loopController, ident.Name)
 			}
 

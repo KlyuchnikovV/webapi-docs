@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-type File struct {
+type SwaggerSpec struct {
 	Openapi    string                      `json:"openapi"`
 	Info       Info                        `json:"info"`
 	Servers    []Server                    `json:"servers"`
@@ -14,8 +14,8 @@ type File struct {
 	Paths      map[string]map[string]Route `json:"paths"`
 }
 
-func NewFile(servers ...Server) *File {
-	return &File{
+func NewSwaggerSpec(servers ...Server) *SwaggerSpec {
+	return &SwaggerSpec{
 		Openapi: "3.0.3",
 		Info: Info{
 			Version: "3.0.3",
@@ -71,8 +71,8 @@ func (parser *Parser) ParseParameter(file ast.File, route *Route, argument ast.C
 	case "Body", "CustomBody":
 		name, schema := parser.NewInBody(file, argument.Args[0])
 
-		parser.file.Components.Schemas[name] = schema
-		parser.file.Components.RequestBodies[name] = NewRequestBody(*NewReference(name, "schemas"))
+		parser.Spec.Components.Schemas[name] = schema
+		parser.Spec.Components.RequestBodies[name] = NewRequestBody(*NewReference(name, "schemas"))
 
 		route.RequestBody = NewReference(name, "requestBodies")
 	default:
@@ -93,22 +93,6 @@ func (parser *Parser) ParseParameter(file ast.File, route *Route, argument ast.C
 	}
 
 	return nil
-}
-
-func extractMethod(arg ast.Expr) string {
-	if sel, ok := arg.(*ast.SelectorExpr); ok {
-		return strings.ToLower(sel.Sel.Name)
-	}
-
-	return ""
-}
-
-func extractPath(arg ast.Expr) string {
-	if sel, ok := arg.(*ast.BasicLit); ok {
-		return fmt.Sprintf("/%s", strings.Trim(sel.Value, "\"/"))
-	}
-
-	return ""
 }
 
 func (parser *Parser) NewInBody(file ast.File, arg ast.Expr) (string, Schema) {

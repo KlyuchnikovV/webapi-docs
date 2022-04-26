@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 )
 
-func (parser *Parser) ParseRouters(file ast.File, prefix string, funcDecl ast.FuncDecl) error {
+func (parser *Parser) ParseRouters(file ast.File, apiPrefix string, funcDecl ast.FuncDecl) error {
 	err := CheckFuncDeclaration(
 		funcDecl,
 		"Routers",
 		nil,
-		[]func(ast.Expr) error{CheckRoutersResultType},
+		CheckRoutersResultType,
 	)
 	if err != nil {
 		return err
@@ -36,7 +36,7 @@ func (parser *Parser) ParseRouters(file ast.File, prefix string, funcDecl ast.Fu
 			return fmt.Errorf("'Routers' is of wrong return type: %w", err)
 		}
 
-		return parser.parseRoutes(file, prefix, compositeLit.Elts)
+		return parser.parseRoutes(file, apiPrefix, compositeLit.Elts)
 	}
 
 	return nil
@@ -46,7 +46,7 @@ func CheckFuncDeclaration(
 	funcDecl ast.FuncDecl,
 	name string,
 	params []func(ast.Expr) error,
-	results []func(ast.Expr) error,
+	results ...func(ast.Expr) error,
 ) error {
 	if funcDecl.Name.Name != name {
 		return fmt.Errorf("not a '%s' func", name)
@@ -125,11 +125,11 @@ func (parser *Parser) parseRoutes(file ast.File, servicePrefix string, expressio
 
 		var resultPath = filepath.Join(apiPrefix, path)
 
-		if _, ok := parser.file.Paths[resultPath]; !ok {
-			parser.file.Paths[resultPath] = make(map[string]Route)
+		if _, ok := parser.Spec.Paths[resultPath]; !ok {
+			parser.Spec.Paths[resultPath] = make(map[string]Route)
 		}
 
-		parser.file.Paths[resultPath][method] = *route
+		parser.Spec.Paths[resultPath][method] = *route
 	}
 
 	return nil
