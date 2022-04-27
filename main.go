@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,9 +17,9 @@ func main() {
 	}
 
 	var (
-		path             = os.Args[1]
-		basePath, gopath = getBasePath(path)
-		parser           = parser2.NewParser(basePath, gopath)
+		path                  = os.Args[1]
+		basePath, gopath, err = getBasePath(path)
+		parser                = parser2.NewParser(basePath, gopath)
 	)
 
 	spec, err := parser.GenerateDocs(path)
@@ -36,14 +35,21 @@ func main() {
 	fmt.Printf("%s", string(bytes))
 }
 
-func getBasePath(path string) (string, string) {
-	absolutePath, err := filepath.Abs(path)
-	if err != nil {
-		log.Println(err)
-		return "", ""
+func getBasePath(path string) (string, string, error) {
+	var (
+		gopath     = os.Getenv("GOPATH")
+		srcDirPath = filepath.Join(gopath, "src/")
+	)
+
+	if len(gopath) == 0 {
+		// TODO: disable error in private mode
+		return "", "", fmt.Errorf("GOPATH must be provided")
 	}
 
-	srcDirPath := os.Getenv("GOPATH") + "/src/"
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return "", "", err
+	}
 
-	return absolutePath[strings.LastIndex(absolutePath, srcDirPath)+len(srcDirPath):], os.Getenv("GOPATH")
+	return absolutePath[strings.LastIndex(absolutePath, srcDirPath)+len(srcDirPath):], gopath, nil
 }

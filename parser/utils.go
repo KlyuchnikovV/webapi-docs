@@ -61,7 +61,7 @@ func (parser *Parser) Implements(pkg string, t ast.TypeSpec, i ast.InterfaceType
 				return true
 			}
 
-			// TODO: for now - simple name and types checking
+			// TODO: for now - simple name and types checking - using tags
 			interfaceFunc, ok := methods[funcDecl.Name.Name]
 			if !ok {
 				return true
@@ -110,7 +110,7 @@ func (parser *Parser) ImportPackage(path string) error {
 	return nil
 }
 
-func (parser *Parser) FindModel(ident ast.Ident) *ast.Object {
+func (parser *Parser) FindModel(ident ast.Ident) (*ast.Object, error) {
 	var obj *ast.Object
 
 	for _, pkg := range parser.packages {
@@ -126,7 +126,11 @@ func (parser *Parser) FindModel(ident ast.Ident) *ast.Object {
 		}
 	}
 
-	return obj
+	if obj == nil {
+		return nil, fmt.Errorf("no model found for name: '%s'", ident.Name)
+	}
+
+	return obj, nil
 }
 
 func IsReceiverOfType(decl ast.FuncDecl, t ast.TypeSpec) bool {
@@ -142,7 +146,6 @@ func IsReceiverOfType(decl ast.FuncDecl, t ast.TypeSpec) bool {
 
 	switch typed := decl.Recv.List[0].Type.(type) {
 	case *ast.StarExpr:
-		// TODO: Could be problems
 		i, ok := typed.X.(*ast.Ident)
 		if !ok {
 			return false
@@ -289,7 +292,6 @@ func SameNodes(t1, t2 ast.Node) bool {
 		return true
 	default:
 		return false
-		// panic(fmt.Errorf("can't parse %#v", typed1))
 	}
 }
 
@@ -332,4 +334,69 @@ func extractPath(arg ast.Expr) string {
 	}
 
 	return ""
+}
+
+func CheckRoutersResultType(resultType ast.Expr) error {
+	mapType, ok := resultType.(*ast.MapType)
+	if !ok {
+		return fmt.Errorf("not a map")
+	}
+
+	ident, ok := mapType.Key.(*ast.Ident)
+	if !ok || ident.Name != "string" {
+		return fmt.Errorf("map's key is not a 'string'")
+	}
+
+	selector, ok := mapType.Value.(*ast.SelectorExpr)
+	if !ok {
+		return fmt.Errorf("map's value is of wrong type")
+	}
+
+	valuePackage, ok := selector.X.(*ast.Ident)
+	if !ok {
+		return fmt.Errorf("map's value package couldn't be defined")
+	}
+
+	if valuePackage.Name != "webapi" {
+		return fmt.Errorf("wrong map's value package")
+	}
+
+	if selector.Sel.Name != "RouterByPath" {
+		return fmt.Errorf("map's value is not a 'RouterByPath'")
+	}
+
+	return nil
+}
+
+func CheckFuncDeclaration(
+	funcDecl ast.FuncDecl,
+	name string,
+	params []func(ast.Expr) error,
+	results ...func(ast.Expr) error,
+) error {
+	if funcDecl.Name.Name != name {
+		return fmt.Errorf("not a '%s' func", name)
+	}
+
+	if len(params) != len(funcDecl.Type.Params.List) {
+		return fmt.Errorf("'%s' should have %d parameters", name, len(params))
+	}
+
+	for i, param := range params {
+		if err := param(funcDecl.Type.Params.List[i].Type); err != nil {
+			return err
+		}
+	}
+
+	if len(results) != len(funcDecl.Type.Results.List) {
+		return fmt.Errorf("'%s' should have %d results", name, len(params))
+	}
+
+	for i, param := range params {
+		if err := param(funcDecl.Type.Results.List[i].Type); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

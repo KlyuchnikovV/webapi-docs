@@ -8,30 +8,61 @@ import (
 	"github.com/KlyuchnikovV/webapi-docs/types"
 )
 
-type Server struct {
-	URL         string `json:"url"`
-	Description string `json:"description"`
-}
+type (
+	Server struct {
+		URL         string `json:"url"`
+		Description string `json:"description"`
+	}
 
-type Components struct {
-	Schemas       map[string]Schema      `json:"schemas,omitempty"`
-	Parameters    map[string]IParameter  `json:"parameters,omitempty"`
-	RequestBodies map[string]RequestBody `json:"requestBodies,omitempty"`
+	Info struct {
+		Title   string `json:"title"`
+		Version string `json:"version"`
+	}
 
-	Responses map[string]interface{} `json:"responses,omitempty"`
-}
+	Response struct {
+		Description string      `json:"description"`
+		Schema      interface{} `json:"schema,omitempty"`
+	}
 
-type Info struct {
-	Title   string `json:"title"`
-	Version string `json:"version"`
-}
+	Components struct {
+		Schemas       map[string]Schema      `json:"schemas,omitempty"`
+		Parameters    map[string]IParameter  `json:"parameters,omitempty"`
+		RequestBodies map[string]RequestBody `json:"requestBodies,omitempty"`
 
-type Route struct {
-	Summary     string           `json:"summary,omitempty"`
-	Tags        []string         `json:"tags,omitempty"`
-	Parameters  []IParameter     `json:"parameters,omitempty"`
-	RequestBody *Reference       `json:"requestBody,omitempty"`
-	Responses   map[int]Response `json:"responses"`
+		Responses map[string]interface{} `json:"responses,omitempty"`
+	}
+
+	Route struct {
+		Summary     string           `json:"summary,omitempty"`
+		Tags        []string         `json:"tags,omitempty"`
+		Parameters  []IParameter     `json:"parameters,omitempty"`
+		RequestBody *Reference       `json:"requestBody,omitempty"`
+		Responses   map[int]Response `json:"responses"`
+	}
+
+	SwaggerSpec struct {
+		Openapi    string                      `json:"openapi"`
+		Info       Info                        `json:"info"`
+		Servers    []Server                    `json:"servers"`
+		Components Components                  `json:"components"`
+		Paths      map[string]map[string]Route `json:"paths"`
+	}
+)
+
+func NewSwaggerSpec(servers ...Server) *SwaggerSpec {
+	return &SwaggerSpec{
+		Openapi: "3.0.3",
+		Info: Info{
+			Version: "3.0.3",
+		},
+		Servers: servers,
+		Paths:   make(map[string]map[string]Route),
+		Components: Components{
+			Schemas:       make(map[string]Schema),
+			Parameters:    make(map[string]IParameter),
+			RequestBodies: make(map[string]RequestBody),
+		},
+	}
 }
 
 func NewRoute() *Route {
@@ -47,72 +78,23 @@ func NewRoute() *Route {
 	}
 }
 
-func (parser *Parser) AddParameter(route *Route, param IParameter) {
-	var (
-		name  string
-		ok    = true
-		saved IParameter
-	)
-
-	for i := 0; ok; i++ {
-		name = fmt.Sprintf("%s-%s-%d", param.NameParam(), param.Type(), i)
-		saved, ok = parser.Spec.Components.Parameters[name]
-
-		if ok && saved.EqualTo(param) {
-			break
-		}
+type (
+	IParameter interface {
+		NameParam() string
+		Type() string
+		EqualTo(interface{}) bool
 	}
 
-	route.Parameters = append(route.Parameters, NewReference(name, "parameters"))
-
-	if saved == nil {
-		parser.Spec.Components.Parameters[name] = param
+	Parameter struct {
+		In          string     `json:"in"`
+		Name        string     `json:"name"`
+		Required    bool       `json:"required"`
+		Minimum     int        `json:"minimum,omitempty"`
+		Description string     `json:"description,omitempty"`
+		RequestBody *Reference `json:"requestBody,omitempty"`
+		Schema      Schema     `json:"schema,omitempty"`
 	}
-}
-
-type IParameter interface {
-	NameParam() string
-	Type() string
-	EqualTo(interface{}) bool
-}
-
-type Parameter struct {
-	In          string     `json:"in"`
-	Name        string     `json:"name"`
-	Required    bool       `json:"required"`
-	Minimum     int        `json:"minimum,omitempty"`
-	Description string     `json:"description,omitempty"`
-	RequestBody *Reference `json:"requestBody,omitempty"`
-	Schema      Schema     `json:"schema,omitempty"`
-}
-
-func (i Parameter) NameParam() string {
-	return i.Name
-}
-
-func (i Parameter) Type() string {
-	return i.Schema.SchemaType()
-}
-
-func (i Parameter) EqualTo(p interface{}) bool {
-	typed, ok := p.(Parameter)
-	if !ok {
-		return false
-	}
-
-	if i.Schema != nil && !i.Schema.EqualTo(typed.Schema) {
-		return false
-	}
-
-	if i.RequestBody != nil && !i.RequestBody.EqualTo(typed.RequestBody) {
-		return false
-	}
-
-	return typed.In == i.In &&
-		typed.Name == i.Name &&
-		typed.Required == i.Required &&
-		typed.Description == i.Description
-}
+)
 
 func NewParameter(paramType string, t string, args []ast.Expr) Parameter {
 	var parameter = Parameter{
@@ -164,9 +146,32 @@ func NewParameter(paramType string, t string, args []ast.Expr) Parameter {
 	return parameter
 }
 
-type Response struct {
-	Description string      `json:"description"`
-	Schema      interface{} `json:"schema,omitempty"`
+func (i Parameter) NameParam() string {
+	return i.Name
+}
+
+func (i Parameter) Type() string {
+	return i.Schema.SchemaType()
+}
+
+func (i Parameter) EqualTo(p interface{}) bool {
+	typed, ok := p.(Parameter)
+	if !ok {
+		return false
+	}
+
+	if i.Schema != nil && !i.Schema.EqualTo(typed.Schema) {
+		return false
+	}
+
+	if i.RequestBody != nil && !i.RequestBody.EqualTo(typed.RequestBody) {
+		return false
+	}
+
+	return typed.In == i.In &&
+		typed.Name == i.Name &&
+		typed.Required == i.Required &&
+		typed.Description == i.Description
 }
 
 func parseParameterOption(expr *ast.CallExpr) (string, []string) {

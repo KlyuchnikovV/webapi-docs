@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"go/ast"
+	"path/filepath"
 	"strings"
 
 	"github.com/KlyuchnikovV/webapi-docs/types"
@@ -53,6 +54,36 @@ func (parser *Parser) ParseService(pkg string, file ast.File, funcDecl ast.FuncD
 		parser.GetPrefix(funcDecl.Body.List),
 		*parser.FindMethod(pkg, *typeSpec, *types.RoutersFuncDecl(alias)),
 	)
+}
+
+func (parser *Parser) ParseRouters(file ast.File, apiPrefix string, funcDecl ast.FuncDecl) error {
+	if err := CheckFuncDeclaration(funcDecl, "Routers", nil, CheckRoutersResultType); err != nil {
+		return err
+	}
+
+	for _, statement := range funcDecl.Body.List {
+		returnStmt, ok := statement.(*ast.ReturnStmt)
+		if !ok {
+			continue
+		}
+
+		if len(returnStmt.Results) == 0 {
+			continue
+		}
+
+		compositeLit, ok := returnStmt.Results[0].(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+
+		if err := CheckRoutersResultType(compositeLit.Type); err != nil {
+			return fmt.Errorf("'Routers' is of wrong return type: %w", err)
+		}
+
+		return parser.parseRoutes(file, apiPrefix, compositeLit.Elts)
+	}
+
+	return nil
 }
 
 func (parser *Parser) GetReturnType(funcDecl ast.FuncDecl) (*ast.TypeSpec, error) {
@@ -118,4 +149,57 @@ func (parser *Parser) GetPrefix(stmts []ast.Stmt) string {
 	}
 
 	return result
+}
+
+func (parser *Parser) parseRoutes(file ast.File, servicePrefix string, expressions []ast.Expr) error {
+	var apiPrefix = "/" + filepath.Join(parser.apiPrefix, servicePrefix)
+
+	for _, expression := range expressions {
+		keyValue, ok := expression.(*ast.KeyValueExpr)
+		if !ok {
+			return fmt.Errorf("not a key-value")
+		}
+
+		method, path, route, err := parser.ParseRoute(file, *keyValue)
+		if err != nil {
+			return err
+		}
+
+		route.Tags = append(route.Tags, servicePrefix)
+
+		var resultPath = filepath.Join(apiPrefix, path)
+
+		if _, ok := parser.Spec.Paths[resultPath]; !ok {
+			parser.Spec.Paths[resultPath] = make(map[string]Route)
+		}
+
+		parser.Spec.Paths[resultPath][method] = *route
+	}
+
+	return nil
+}
+
+func (parser *Parser) ParseRoute(file ast.File, keyValue ast.KeyValueExpr) (string, string, *Route, error) {
+	var route = NewRoute()
+
+	callExpression, ok := keyValue.Value.(*ast.CallExpr)
+	if !ok {
+		return "", "", nil, fmt.Errorf("value not a function")
+	}
+
+	for i, arg := range callExpression.Args {
+		switch argument := arg.(type) {
+		case *ast.CallExpr:
+			if err := parser.ParseParameter(file, route, *argument); err != nil {
+				return "", "", nil, err
+			}
+		case *ast.SelectorExpr:
+			// TODO: name of functions to parse
+			fmt.Printf("\t1arg %d is %#v\n", i, argument.Sel.Name)
+		}
+	}
+
+	return extractMethod(callExpression.Fun),
+		extractPath(keyValue.Key),
+		route, nil
 }

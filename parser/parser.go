@@ -3,7 +3,7 @@ package parser
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
+	goparser "go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
@@ -41,21 +41,21 @@ func NewParser(localPath, gopath string) Parser {
 	}
 }
 
-func (p *Parser) GenerateDocs(path string) (*SwaggerSpec, error) {
-	if err := p.ParsePackages(path); err != nil {
+func (parser *Parser) GenerateDocs(path string) (*SwaggerSpec, error) {
+	if err := parser.parsePackages(path); err != nil {
 		return nil, err
 	}
 
-	p.ExtractEngineData()
+	parser.extractEngineData()
 
-	if err := p.ParseServices(); err != nil {
+	if err := parser.ParseServices(); err != nil {
 		return nil, err
 	}
 
-	return p.Spec, nil
+	return parser.Spec, nil
 }
 
-func (p *Parser) ParsePackages(path string) error {
+func (parser *Parser) parsePackages(path string) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -68,18 +68,41 @@ func (p *Parser) ParsePackages(path string) error {
 	}
 
 	if !info.IsDir() {
-		return p.parseFile(path, file, info)
+		return parser.parseFile(path, file, info)
 	}
 
-	return p.parseDir(path, file, info)
+	return parser.parseDir(path, file, info)
 }
 
-func (p *Parser) parseDir(path string, file *os.File, info os.FileInfo) error {
+func (parser *Parser) extractEngineData() {
+	for _, pkg := range parser.packages {
+		for _, file := range pkg.Files {
+			var webapiPkgAlias = parser.findWebapiImport(*file)
+
+			if webapiPkgAlias == "" {
+				// Do not parse files that are not related to webapi.
+				continue
+			}
+
+			ast.Inspect(file, func(n ast.Node) bool {
+				parser.getVarName(n, webapiPkgAlias)
+
+				parser.getAPIPrefix(n)
+
+				parser.getServiceSelectors(n)
+
+				return true
+			})
+		}
+	}
+}
+
+func (parser *Parser) parseDir(path string, file *os.File, info os.FileInfo) error {
 	if !info.IsDir() {
-		return p.parseFile(path, file, info)
+		return parser.parseFile(path, file, info)
 	}
 
-	pkgs, err := parser.ParseDir(p.fset, path, nil, parser.AllErrors|parser.ParseComments)
+	pkgs, err := goparser.ParseDir(parser.fset, path, nil, goparser.AllErrors|goparser.ParseComments)
 	if err != nil {
 		return err
 	}
@@ -87,14 +110,14 @@ func (p *Parser) parseDir(path string, file *os.File, info os.FileInfo) error {
 	var packageName = strings.Trim(path, "./")
 
 	for _, pkg := range pkgs {
-		if p.packages[packageName].Files == nil {
-			pkg := p.packages[packageName]
+		if parser.packages[packageName].Files == nil {
+			pkg := parser.packages[packageName]
 			pkg.Files = make(map[string]*ast.File)
-			p.packages[packageName] = pkg
+			parser.packages[packageName] = pkg
 		}
 
 		for name, file := range pkg.Files {
-			p.packages[packageName].Files[name] = file
+			parser.packages[packageName].Files[name] = file
 		}
 	}
 
@@ -118,7 +141,7 @@ func (p *Parser) parseDir(path string, file *os.File, info os.FileInfo) error {
 		}
 
 		if info.IsDir() {
-			if err := p.parseDir(filePath, file, info); err != nil {
+			if err := parser.parseDir(filePath, file, info); err != nil {
 				return err
 			}
 		}
@@ -127,21 +150,22 @@ func (p *Parser) parseDir(path string, file *os.File, info os.FileInfo) error {
 	return nil
 }
 
-func (p *Parser) parseFile(path string, file *os.File, info os.FileInfo) error {
+// TODO: refactor
+func (parser *Parser) parseFile(path string, file *os.File, info os.FileInfo) error {
 	if info.IsDir() {
-		return p.parseDir(path, file, info)
+		return parser.parseDir(path, file, info)
 	}
 
 	if !strings.HasSuffix(path, ".go") {
 		return nil
 	}
 
-	astFile, err := parser.ParseFile(p.fset, "", file, parser.AllErrors)
+	astFile, err := goparser.ParseFile(parser.fset, "", file, goparser.AllErrors)
 	if err != nil {
 		return err
 	}
 
-	p.packages[""] = ast.Package{
+	parser.packages[""] = ast.Package{
 		Files: map[string]*ast.File{
 			"": astFile,
 		},
@@ -184,7 +208,7 @@ func (p *Parser) parseFile(path string, file *os.File, info os.FileInfo) error {
 
 		for _, result := range fun.Type.Results.List {
 			if SameNodes(typeSpec, result.Type) {
-				if err := p.ParseService("", *astFile, *fun); err != nil {
+				if err := parser.ParseService("", *astFile, *fun); err != nil {
 					return true
 				}
 				break
@@ -197,30 +221,7 @@ func (p *Parser) parseFile(path string, file *os.File, info os.FileInfo) error {
 	return nil
 }
 
-func (p *Parser) ExtractEngineData() {
-	for _, pkg := range p.packages {
-		for _, file := range pkg.Files {
-			var webapiPkgAlias = p.findWebapiImport(*file)
-
-			if webapiPkgAlias == "" {
-				// Do not parse files that are not related to webapi.
-				continue
-			}
-
-			ast.Inspect(file, func(n ast.Node) bool {
-				p.getVarName(n, webapiPkgAlias)
-
-				p.getAPIPrefix(n)
-
-				p.getServiceSelectors(n)
-
-				return true
-			})
-		}
-	}
-}
-
-func (p *Parser) findWebapiImport(file ast.File) string {
+func (parser *Parser) findWebapiImport(file ast.File) string {
 	var result string
 
 	for i, imp := range file.Imports {
@@ -242,7 +243,7 @@ func (p *Parser) findWebapiImport(file ast.File) string {
 	return result
 }
 
-func (p *Parser) getVarName(n ast.Node, alias string) {
+func (parser *Parser) getVarName(n ast.Node, alias string) {
 	if n == nil {
 		return
 	}
@@ -284,7 +285,7 @@ func (p *Parser) getVarName(n ast.Node, alias string) {
 		return
 	}
 
-	p.variableName = name
+	parser.variableName = name
 
 	url := strings.Trim(callExpr.Args[0].(*ast.BasicLit).Value, "\"")
 
@@ -292,12 +293,12 @@ func (p *Parser) getVarName(n ast.Node, alias string) {
 		url = fmt.Sprintf("http://localhost%s", url)
 	}
 
-	p.servers = append(p.servers, Server{
+	parser.servers = append(parser.servers, Server{
 		URL: url,
 	})
 }
 
-func (p *Parser) getAPIPrefix(n ast.Node) {
+func (parser *Parser) getAPIPrefix(n ast.Node) {
 	if n == nil {
 		return
 	}
@@ -307,16 +308,16 @@ func (p *Parser) getAPIPrefix(n ast.Node) {
 		return
 	}
 
-	if !IsMethod(*callExpr, NewSelector(p.variableName, "WithPrefix")) {
+	if !IsMethod(*callExpr, NewSelector(parser.variableName, "WithPrefix")) {
 		return
 	}
 
-	p.apiPrefix = strings.Trim(callExpr.Args[0].(*ast.BasicLit).Value, "\"")
+	parser.apiPrefix = strings.Trim(callExpr.Args[0].(*ast.BasicLit).Value, "\"")
 
 	return
 }
 
-func (p *Parser) getServiceSelectors(n ast.Node) {
+func (parser *Parser) getServiceSelectors(n ast.Node) {
 	if n == nil {
 		return
 	}
@@ -332,7 +333,7 @@ func (p *Parser) getServiceSelectors(n ast.Node) {
 	}
 
 	if selector.Sel.Name != "RegisterServices" {
-		// TODO:
+		// TODO: check type - using tags
 		return
 	}
 
@@ -351,6 +352,6 @@ func (p *Parser) getServiceSelectors(n ast.Node) {
 			return
 		}
 
-		p.services = append(p.services, *selector)
+		parser.services = append(parser.services, *selector)
 	}
 }

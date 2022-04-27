@@ -6,57 +6,6 @@ import (
 	"strings"
 )
 
-type SwaggerSpec struct {
-	Openapi    string                      `json:"openapi"`
-	Info       Info                        `json:"info"`
-	Servers    []Server                    `json:"servers"`
-	Components Components                  `json:"components"`
-	Paths      map[string]map[string]Route `json:"paths"`
-}
-
-func NewSwaggerSpec(servers ...Server) *SwaggerSpec {
-	return &SwaggerSpec{
-		Openapi: "3.0.3",
-		Info: Info{
-			Version: "3.0.3",
-		},
-		Servers: servers,
-		Paths:   make(map[string]map[string]Route),
-		Components: Components{
-			Schemas:       make(map[string]Schema),
-			Parameters:    make(map[string]IParameter),
-			RequestBodies: make(map[string]RequestBody),
-		},
-	}
-}
-
-func (parser *Parser) ParseRoute(file ast.File, keyValue ast.KeyValueExpr) (string, string, *Route, error) {
-	var route = NewRoute()
-
-	callExpression, ok := keyValue.Value.(*ast.CallExpr)
-	if !ok {
-		return "", "", nil, fmt.Errorf("value not a function")
-	}
-
-	for i, arg := range callExpression.Args {
-		switch argument := arg.(type) {
-		case *ast.CallExpr:
-			if err := parser.ParseParameter(file, route, *argument); err != nil {
-				return "", "", nil, err
-			}
-		case *ast.SelectorExpr:
-			// TODO: name of functions to parse
-			fmt.Printf("\t1arg %d is %#v\n", i, argument.Sel.Name)
-		default:
-			fmt.Printf("\t2arg %d is %#v\n", i, argument)
-		}
-	}
-
-	return extractMethod(callExpression.Fun),
-		extractPath(keyValue.Key),
-		route, nil
-}
-
 func (parser *Parser) ParseParameter(file ast.File, route *Route, argument ast.CallExpr) error {
 	if len(argument.Args) == 0 {
 		return fmt.Errorf("no arguments found")
@@ -69,12 +18,15 @@ func (parser *Parser) ParseParameter(file ast.File, route *Route, argument ast.C
 
 	switch selector.Sel.Name {
 	case "Body", "CustomBody":
-		name, schema := parser.NewInBody(file, argument.Args[0])
+		name, schema, err := parser.NewInBody(file, argument.Args[0])
+		if err != nil {
+			return err
+		}
 
 		parser.Spec.Components.Schemas[name] = schema
-		parser.Spec.Components.RequestBodies[name] = NewRequestBody(*NewReference(name, "schemas"))
+		parser.Spec.Components.RequestBodies[name] = NewRequestBody(*parser.NewReference(name, "schemas"))
 
-		route.RequestBody = NewReference(name, "requestBodies")
+		route.RequestBody = parser.NewReference(name, "requestBodies")
 	default:
 		var (
 			prefix string
@@ -95,20 +47,52 @@ func (parser *Parser) ParseParameter(file ast.File, route *Route, argument ast.C
 	return nil
 }
 
-func (parser *Parser) NewInBody(file ast.File, arg ast.Expr) (string, Schema) {
+func (parser *Parser) NewInBody(file ast.File, arg ast.Expr) (string, Schema, error) {
 	identifier, typeSpec := parser.getTypeSpecification(file, arg)
 	if typeSpec == nil {
-		return identifier, nil
+		return identifier, nil, nil
 	}
+
+	var (
+		schema Schema
+		err    error
+	)
 
 	switch typed := typeSpec.Type.(type) {
 	case *ast.StructType:
-		return identifier, parser.NewObject(*typed)
+		schema, err = parser.NewObject(*typed)
 	case *ast.ArrayType:
-		return identifier, parser.NewArray(*typed)
+		schema, err = parser.NewArray(*typed)
 	}
 
-	return "", nil
+	if err != nil {
+		return "", nil, err
+	}
+
+	return identifier, schema, nil
+}
+
+func (parser *Parser) AddParameter(route *Route, param IParameter) {
+	var (
+		name  string
+		ok    = true
+		saved IParameter
+	)
+
+	for i := 0; ok; i++ {
+		name = fmt.Sprintf("%s-%s-%d", param.NameParam(), param.Type(), i)
+		saved, ok = parser.Spec.Components.Parameters[name]
+
+		if ok && saved.EqualTo(param) {
+			break
+		}
+	}
+
+	route.Parameters = append(route.Parameters, parser.NewReference(name, "parameters"))
+
+	if saved == nil {
+		parser.Spec.Components.Parameters[name] = param
+	}
 }
 
 func (parser *Parser) getTypeSpecification(file ast.File, arg ast.Expr) (string, *ast.TypeSpec) {

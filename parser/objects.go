@@ -29,10 +29,6 @@ func NewRequestBody(ref Reference) RequestBody {
 	}
 }
 
-type Property interface {
-	EqualTo(interface{}) bool
-}
-
 type Schema interface {
 	SchemaType() string
 	EqualTo(interface{}) bool
@@ -54,10 +50,45 @@ func GetFieldName(field *ast.Field) string {
 	return value[start : start+end]
 }
 
+type ObjectProperty interface {
+	EqualTo(interface{}) bool
+}
+
 type Object struct {
-	Type       string              `json:"type"`
-	Properties map[string]Property `json:"properties,omitempty"`
-	Required   []string            `json:"required,omitempty"`
+	Type       string                    `json:"type"`
+	Properties map[string]ObjectProperty `json:"properties,omitempty"`
+	Required   []string                  `json:"required,omitempty"`
+}
+
+func (parser *Parser) NewObject(t ast.StructType) (*Object, error) {
+	var schema = Object{
+		Type:       "object",
+		Properties: make(map[string]ObjectProperty),
+	}
+
+	for _, item := range t.Fields.List {
+		var (
+			parsedField Schema
+			err         error
+		)
+
+		switch typed := item.Type.(type) {
+		case *ast.Ident:
+			parsedField, err = parser.NewField(*typed)
+		case *ast.StructType:
+			parsedField, err = parser.NewObject(*typed)
+		case *ast.ArrayType:
+			parsedField, err = parser.NewArray(*typed)
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		schema.Properties[GetFieldName(item)] = parsedField
+	}
+
+	return &schema, nil
 }
 
 func (o Object) SchemaType() string {
@@ -84,55 +115,48 @@ func (o Object) EqualTo(s interface{}) bool {
 		}
 	}
 
-	if len(o.Required) != len(typed.Required) {
-		for _, value := range o.Required {
-			var found bool
+	if len(o.Required) == len(typed.Required) {
+		return true
+	}
 
-			for _, secondValue := range typed.Required {
-				if value == secondValue {
-					found = true
-					break
-				}
-			}
+	for _, value := range o.Required {
+		var found bool
 
-			if !found {
-				return false
+		for _, secondValue := range typed.Required {
+			if value == secondValue {
+				found = true
+				break
 			}
 		}
 
-		return true
+		if !found {
+			return false
+		}
 	}
 
 	return true
 }
 
-func (parser *Parser) NewObject(t ast.StructType) Object {
-	var schema = Object{
-		Type:       "object",
-		Properties: make(map[string]Property),
-	}
-
-	for _, item := range t.Fields.List {
-		var parsedField Schema
-
-		switch typed := item.Type.(type) {
-		case *ast.Ident:
-			parsedField = parser.NewField(*typed)
-		case *ast.StructType:
-			parsedField = parser.NewObject(*typed)
-		case *ast.ArrayType:
-			parsedField = parser.NewArray(*typed)
-		}
-
-		schema.Properties[GetFieldName(item)] = parsedField
-	}
-
-	return schema
-}
-
 type Array struct {
 	Type  string `json:"type"`
 	Items Schema `json:"items"`
+}
+
+func (parser *Parser) NewArray(t ast.ArrayType) (*Array, error) {
+	var (
+		schema = Array{Type: "array"}
+		err    error
+	)
+	switch typed := t.Elt.(type) {
+	case *ast.Ident:
+		schema.Items, err = parser.NewField(*typed)
+	case *ast.StructType:
+		schema.Items, err = parser.NewObject(*typed)
+	case *ast.ArrayType:
+		schema.Items, err = parser.NewArray(*typed)
+	}
+
+	return &schema, err
 }
 
 func (a Array) SchemaType() string {
@@ -152,24 +176,55 @@ func (a Array) EqualTo(s interface{}) bool {
 	return a.Items.EqualTo(typed.Items)
 }
 
-func (parser *Parser) NewArray(t ast.ArrayType) Array {
-	var schema = Array{Type: "array"}
-
-	switch typed := t.Elt.(type) {
-	case *ast.Ident:
-		schema.Items = parser.NewField(*typed)
-	case *ast.StructType:
-		schema.Items = parser.NewObject(*typed)
-	case *ast.ArrayType:
-		schema.Items = parser.NewArray(*typed)
-	}
-
-	return schema
-}
-
 type Field struct {
 	Type   string `json:"type"`
 	Format string `json:"format,omitempty"`
+}
+
+func (parser *Parser) NewField(ident ast.Ident) (Schema, error) {
+	if identType := types.ConvertFieldType(ident.Name); len(identType) != 0 {
+		return Field{
+			Type:   identType,
+			Format: types.GetFieldTypeFormat(ident.Name),
+		}, nil
+	}
+
+	var obj = ident.Obj
+	if obj == nil {
+		model, err := parser.FindModel(ident)
+		if err != nil {
+			return nil, err
+		}
+		obj = model
+	}
+
+	typeSpec, ok := obj.Decl.(ast.TypeSpec)
+	if !ok {
+		return nil, fmt.Errorf("field could be parsed only to type specification (got: '%T')", obj.Decl)
+	}
+
+	switch t := typeSpec.Type.(type) {
+	case *ast.Ident:
+		return parser.NewField(*t)
+	case *ast.StructType:
+
+		if _, ok := parser.loopController[ident.Name]; !ok {
+			var err error
+
+			parser.loopController[ident.Name] = struct{}{}
+			parser.Spec.Components.Schemas[ident.Name], err = parser.NewObject(*t)
+			delete(parser.loopController, ident.Name)
+
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return parser.NewReference(ident.Name, "schemas"), nil
+
+	default:
+		return nil, fmt.Errorf("fields inner type not handled")
+	}
 }
 
 func (f Field) SchemaType() string {
@@ -185,52 +240,17 @@ func (f Field) EqualTo(s interface{}) bool {
 	return f.Type == typed.Type && f.Format == typed.Format
 }
 
-func (parser *Parser) NewField(ident ast.Ident) Schema {
-	var identType = types.ConvertFieldType(ident.Name)
-
-	if len(identType) != 0 {
-		return Field{
-			Type:   identType,
-			Format: types.GetFieldTypeFormat(ident.Name),
-		}
-	}
-
-	var obj ast.Object
-	if ident.Obj == nil {
-		obj = *parser.FindModel(ident)
-	} else {
-		obj = *ident.Obj
-	}
-
-	switch typed := obj.Decl.(type) {
-	case *ast.TypeSpec:
-		switch t := typed.Type.(type) {
-		case *ast.Ident:
-			return Field{
-				Type:   types.ConvertFieldType(t.Name),
-				Format: types.GetFieldTypeFormat(ident.Name),
-			}
-		case *ast.StructType:
-			if _, ok := parser.loopController[ident.Name]; !ok {
-				parser.loopController[ident.Name] = struct{}{}
-				parser.Spec.Components.Schemas[ident.Name] = parser.NewObject(*t)
-				delete(parser.loopController, ident.Name)
-			}
-
-			return NewReference(ident.Name, "schemas")
-		default:
-			panic("not handled inner")
-		}
-	default:
-		// return NewReference(ident.Name, "schemas")
-		panic("not handled")
-	}
-}
-
 type Reference struct {
 	Ref string `json:"$ref"`
 
 	name string
+}
+
+func (parser *Parser) NewReference(name, where string) *Reference {
+	return &Reference{
+		Ref:  fmt.Sprintf("#/components/%s/%s", where, name),
+		name: name,
+	}
 }
 
 func (r Reference) SchemaType() string {
@@ -252,11 +272,4 @@ func (r Reference) EqualTo(p interface{}) bool {
 	}
 
 	return typed.Ref == r.Ref
-}
-
-func NewReference(name, where string) *Reference {
-	return &Reference{
-		Ref:  fmt.Sprintf("#/components/%s/%s", where, name),
-		name: name,
-	}
 }
