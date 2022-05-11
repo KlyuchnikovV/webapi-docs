@@ -7,8 +7,21 @@ import (
 	"path/filepath"
 	"strings"
 
-	parser2 "github.com/KlyuchnikovV/webapi-docs/parser"
+	"github.com/KlyuchnikovV/webapi-docs/parser"
 )
+
+// TODO: service prefix
+
+// TODO: body parsing
+// TODO: merge objects and types
+// TODO: move on our type definitions and cache
+// TODO: move types from cache
+// TODO: refactor parser
+// TODO: create cli
+// TODO: review error responses and add builtin packages support
+// TODO: add vendor and mod folders support
+// TODO: add privacy configurations
+// TODO: add linters mode
 
 func main() {
 	if len(os.Args) < 2 {
@@ -19,8 +32,12 @@ func main() {
 	var (
 		path                  = os.Args[1]
 		basePath, gopath, err = getBasePath(path)
-		parser                = parser2.NewParser(basePath, gopath)
+		parser                = parser.NewParser(basePath, gopath)
 	)
+
+	if err != nil {
+		panic(err)
+	}
 
 	spec, err := parser.GenerateDocs(path)
 	if err != nil {

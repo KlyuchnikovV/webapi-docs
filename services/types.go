@@ -1,11 +1,12 @@
-package parser
+package services
 
 import (
 	"fmt"
 	"go/ast"
 	"strings"
 
-	"github.com/KlyuchnikovV/webapi-docs/types"
+	"github.com/KlyuchnikovV/webapi-docs/constants"
+	"github.com/KlyuchnikovV/webapi-docs/objects"
 )
 
 type (
@@ -18,65 +19,7 @@ type (
 		Title   string `json:"title"`
 		Version string `json:"version"`
 	}
-
-	Response struct {
-		Description string      `json:"description"`
-		Schema      interface{} `json:"schema,omitempty"`
-	}
-
-	Components struct {
-		Schemas       map[string]Schema      `json:"schemas,omitempty"`
-		Parameters    map[string]IParameter  `json:"parameters,omitempty"`
-		RequestBodies map[string]RequestBody `json:"requestBodies,omitempty"`
-
-		Responses map[string]interface{} `json:"responses,omitempty"`
-	}
-
-	Route struct {
-		Summary     string           `json:"summary,omitempty"`
-		Tags        []string         `json:"tags,omitempty"`
-		Parameters  []IParameter     `json:"parameters,omitempty"`
-		RequestBody *Reference       `json:"requestBody,omitempty"`
-		Responses   map[int]Response `json:"responses"`
-	}
-
-	SwaggerSpec struct {
-		Openapi    string                      `json:"openapi"`
-		Info       Info                        `json:"info"`
-		Servers    []Server                    `json:"servers"`
-		Components Components                  `json:"components"`
-		Paths      map[string]map[string]Route `json:"paths"`
-	}
 )
-
-func NewSwaggerSpec(servers ...Server) *SwaggerSpec {
-	return &SwaggerSpec{
-		Openapi: "3.0.3",
-		Info: Info{
-			Version: "3.0.3",
-		},
-		Servers: servers,
-		Paths:   make(map[string]map[string]Route),
-		Components: Components{
-			Schemas:       make(map[string]Schema),
-			Parameters:    make(map[string]IParameter),
-			RequestBodies: make(map[string]RequestBody),
-		},
-	}
-}
-
-func NewRoute() *Route {
-	return &Route{
-		Parameters: make([]IParameter, 0),
-		Responses: map[int]Response{
-			// TODO: Mocked for now
-			200: {
-				Description: "success",
-			},
-		},
-		Tags: make([]string, 0),
-	}
-}
 
 type (
 	IParameter interface {
@@ -86,24 +29,27 @@ type (
 	}
 
 	Parameter struct {
-		In          string     `json:"in"`
-		Name        string     `json:"name"`
-		Required    bool       `json:"required"`
-		Minimum     int        `json:"minimum,omitempty"`
-		Description string     `json:"description,omitempty"`
-		RequestBody *Reference `json:"requestBody,omitempty"`
-		Schema      Schema     `json:"schema,omitempty"`
+		In          string             `json:"in"`
+		Name        string             `json:"name"`
+		Required    bool               `json:"required"`
+		Minimum     int                `json:"minimum,omitempty"`
+		Description string             `json:"description,omitempty"`
+		RequestBody *objects.Reference `json:"requestBody,omitempty"`
+		Schema      objects.Schema     `json:"schema,omitempty"`
 	}
 )
 
 func NewParameter(paramType string, t string, args []ast.Expr) Parameter {
-	var parameter = Parameter{
-		In:       paramType,
-		Required: true,
-		Schema: Object{
-			Type: types.ConvertFieldType(types.TypeParamsMap[t]),
-		},
-	}
+	var (
+		fieldType, _ = constants.ConvertFieldType(constants.TypeParamsMap[t])
+		parameter    = Parameter{
+			In:       paramType,
+			Required: true,
+			Schema: objects.Object{
+				Type: fieldType,
+			},
+		}
+	)
 
 	for _, arg := range args {
 		switch argument := arg.(type) {

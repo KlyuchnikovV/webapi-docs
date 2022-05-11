@@ -3,50 +3,50 @@ package parser
 import (
 	"fmt"
 	"go/ast"
-	goparser "go/parser"
-	"go/token"
-	"os"
 	"path/filepath"
+
 	"strings"
+
+	"github.com/KlyuchnikovV/webapi-docs/cache"
+	cacheTypes "github.com/KlyuchnikovV/webapi-docs/cache/types"
+	"github.com/KlyuchnikovV/webapi-docs/constants"
+	"github.com/KlyuchnikovV/webapi-docs/objects"
+	"github.com/KlyuchnikovV/webapi-docs/service"
+	"github.com/KlyuchnikovV/webapi-docs/types"
+	"github.com/KlyuchnikovV/webapi-docs/utils"
 )
 
 type Parser struct {
 	variableName string
 	services     []ast.SelectorExpr
-	servers      []Server
-
-	packages map[string]ast.Package
 
 	notFoundImports []string
 
-	Spec *SwaggerSpec
+	Spec *types.OpenAPISpec
 
 	gopath         string
 	localPath      string
 	apiPrefix      string
 	loopController map[string]struct{}
-	fset           *token.FileSet
 }
 
 func NewParser(localPath, gopath string) Parser {
 	return Parser{
 		notFoundImports: make([]string, 0),
-		Spec:            NewSwaggerSpec(),
+		Spec:            types.NewOpenAPISpec(),
 		gopath:          gopath,
 		localPath:       localPath,
 		loopController:  make(map[string]struct{}),
-		fset:            &token.FileSet{},
-		packages:        make(map[string]ast.Package),
 		apiPrefix:       "api",
 	}
 }
 
-func (parser *Parser) GenerateDocs(path string) (*SwaggerSpec, error) {
-	if err := parser.parsePackages(path); err != nil {
+func (parser *Parser) GenerateDocs(path string) (*types.OpenAPISpec, error) {
+	cache.Init2(parser.gopath, parser.localPath, path)
+
+	if err := parser.extractEngineData(); err != nil {
 		return nil, err
 	}
-
-	parser.extractEngineData()
 
 	if err := parser.ParseServices(); err != nil {
 		return nil, err
@@ -55,29 +55,32 @@ func (parser *Parser) GenerateDocs(path string) (*SwaggerSpec, error) {
 	return parser.Spec, nil
 }
 
-func (parser *Parser) parsePackages(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
+func (parser *Parser) extractEngineData() error {
+	for _, pkg := range cache.GetPackages() {
 
-	info, err := file.Stat()
-	if err != nil {
-		return err
-	}
+		// for _, fun := range pkg.Functions {
+		// 	for _, stmt := range fun.Body { // TODO: lookup methods for body parsing
+		// 		ast.Inspect(stmt, func(n ast.Node) bool {
+		// 			call, ok := n.(*ast.CallExpr)
+		// 			if !ok {
+		// 				return true
+		// 			}
 
-	if !info.IsDir() {
-		return parser.parseFile(path, file, info)
-	}
+		// 			fun, ok := call.Fun.(*ast.SelectorExpr)
+		// 			if !ok {
+		// 				return true
+		// 			}
 
-	return parser.parseDir(path, file, info)
-}
+		// 			method := cache.FindMethod2(*fun)
+		// 			fmt.Print(method)
 
-func (parser *Parser) extractEngineData() {
-	for _, pkg := range parser.packages {
-		for _, file := range pkg.Files {
-			var webapiPkgAlias = parser.findWebapiImport(*file)
+		// 			return true
+		// 		})
+		// 	}
+		// }
+
+		for _, file := range pkg.Pkg.Files {
+			var webapiPkgAlias, _ = utils.FindImportWithPath(*file, "github.com/KlyuchnikovV/webapi")
 
 			if webapiPkgAlias == "" {
 				// Do not parse files that are not related to webapi.
@@ -95,152 +98,96 @@ func (parser *Parser) extractEngineData() {
 			})
 		}
 	}
-}
 
-func (parser *Parser) parseDir(path string, file *os.File, info os.FileInfo) error {
-	if !info.IsDir() {
-		return parser.parseFile(path, file, info)
-	}
-
-	pkgs, err := goparser.ParseDir(parser.fset, path, nil, goparser.AllErrors|goparser.ParseComments)
-	if err != nil {
-		return err
-	}
-
-	var packageName = strings.Trim(path, "./")
-
-	for _, pkg := range pkgs {
-		if parser.packages[packageName].Files == nil {
-			pkg := parser.packages[packageName]
-			pkg.Files = make(map[string]*ast.File)
-			parser.packages[packageName] = pkg
-		}
-
-		for name, file := range pkg.Files {
-			parser.packages[packageName].Files[name] = file
-		}
-	}
-
-	paths, err := file.Readdirnames(-1)
-	if err != nil {
-		return err
-	}
-
-	for _, innerPath := range paths {
-		var filePath = filepath.Join(path, innerPath)
-
-		file, err := os.Open(filePath)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		info, err := file.Stat()
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			if err := parser.parseDir(filePath, file, info); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-// TODO: refactor
-func (parser *Parser) parseFile(path string, file *os.File, info os.FileInfo) error {
-	if info.IsDir() {
-		return parser.parseDir(path, file, info)
-	}
-
-	if !strings.HasSuffix(path, ".go") {
+	if len(parser.services) != 0 {
 		return nil
 	}
 
-	astFile, err := goparser.ParseFile(parser.fset, "", file, goparser.AllErrors)
-	if err != nil {
-		return err
+	for _, pkg := range cache.GetPackages() {
+		// for _, file := range pkg.Pkg.Files {
+		if err := parser.getServiceSelector(pkg); err != nil {
+			return err
+		}
+		// }
 	}
-
-	parser.packages[""] = ast.Package{
-		Files: map[string]*ast.File{
-			"": astFile,
-		},
-	}
-
-	var typeSpec *ast.StarExpr
-
-	ast.Inspect(astFile, func(n ast.Node) bool {
-		fun, ok := n.(*ast.FuncDecl)
-		if !ok {
-			return true
-		}
-
-		if fun.Recv == nil || len(fun.Recv.List) == 0 {
-			return true
-		}
-
-		if err := CheckFuncDeclaration(*fun, "Routers", nil, CheckRoutersResultType); err != nil {
-			return true
-		}
-
-		typeSpec, ok = fun.Recv.List[0].Type.(*ast.StarExpr)
-		if !ok {
-			err = fmt.Errorf("receiver of 'Routers' is not a pointer")
-			return false
-		}
-
-		return false
-	})
-
-	if err != nil {
-		return err
-	}
-
-	ast.Inspect(astFile, func(n ast.Node) bool {
-		fun, ok := n.(*ast.FuncDecl)
-		if !ok {
-			return true
-		}
-
-		for _, result := range fun.Type.Results.List {
-			if SameNodes(typeSpec, result.Type) {
-				if err := parser.ParseService("", *astFile, *fun); err != nil {
-					return true
-				}
-				break
-			}
-		}
-
-		return true
-	})
 
 	return nil
 }
 
-func (parser *Parser) findWebapiImport(file ast.File) string {
-	var result string
+func (parser *Parser) ParseServices() error {
+	// for _, selector := range parser.services {
+	// 	if selector.Sel == nil {
+	// 		continue
+	// 	}
 
-	for i, imp := range file.Imports {
-		var alias string
+	for _, pkg := range cache.GetPackages() {
+		// fmt.Printf("%#v\n", cache.FindMethod2(selector))
 
-		if file.Imports[i].Name != nil {
-			alias = file.Imports[i].Name.Name
-		} else {
-			alias = strings.Trim(
-				file.Imports[i].Path.Value[strings.LastIndex(file.Imports[i].Path.Value, "/")+1:], "\"",
-			)
+		// for _, file := range pkg.Files {
+		// obj := file.Scope.Lookup(selector.Sel.Name)
+		// if obj == nil {
+		// 	continue
+		// }
+
+		// funcDecl, ok := obj.Decl.(*ast.FuncDecl)
+		// if !ok {
+		// 	continue
+		// }
+
+		for _, model := range pkg.Types {
+			if fun := model.Method("Routers"); fun == nil {
+				continue
+			}
+
+			var srv = service.New(pkg, model, "")
+			if err := srv.Parse(); err != nil {
+				return err
+			}
+
+			// if err := srv.Parse(*file, *funcDecl); err != nil {
+			// 	return err
+			// }
+
+			for name, schema := range srv.Components.Schemas {
+				parser.Spec.Components.Schemas[name] = schema
+			}
+
+			for name, parameter := range srv.Components.Parameters {
+				parser.Spec.Components.Parameters[name] = parameter
+			}
+
+			for name, body := range srv.Components.RequestBodies {
+				parser.Spec.Components.RequestBodies[name] = body
+			}
+
+			for name, response := range srv.Components.Responses {
+				parser.Spec.Components.Responses[name] = response
+			}
+
+			for path, paths := range srv.Paths {
+				path = filepath.Join("/", parser.apiPrefix, path)
+
+				if _, ok := parser.Spec.Paths[path]; !ok {
+					parser.Spec.Paths[path] = make(map[string]objects.Route)
+				}
+
+				for method, handler := range paths {
+					parser.Spec.Paths[path][method] = handler
+				}
+			}
+
+			// var srv = NewService(parser, *pkg, *funcDecl)
+			// if err := srv.ParseService(*file, *funcDecl); err != nil {
+			// 	return err
+			// }
 		}
 
-		if imp.Path.Value == "\"github.com/KlyuchnikovV/webapi\"" {
-			result = alias
-		}
 	}
 
-	return result
+	// }
+	// }
+
+	return nil
 }
 
 func (parser *Parser) getVarName(n ast.Node, alias string) {
@@ -293,7 +240,7 @@ func (parser *Parser) getVarName(n ast.Node, alias string) {
 		url = fmt.Sprintf("http://localhost%s", url)
 	}
 
-	parser.servers = append(parser.servers, Server{
+	parser.Spec.Servers = append(parser.Spec.Servers, types.ServerInfo{
 		URL: url,
 	})
 }
@@ -313,8 +260,6 @@ func (parser *Parser) getAPIPrefix(n ast.Node) {
 	}
 
 	parser.apiPrefix = strings.Trim(callExpr.Args[0].(*ast.BasicLit).Value, "\"")
-
-	return
 }
 
 func (parser *Parser) getServiceSelectors(n ast.Node) {
@@ -354,4 +299,68 @@ func (parser *Parser) getServiceSelectors(n ast.Node) {
 
 		parser.services = append(parser.services, *selector)
 	}
+}
+
+func (parser *Parser) getServiceSelector(pkg cacheTypes.Package) error {
+	var (
+		// typeSpecs = make([]*ast.StarExpr, 0)
+		result = make([]cacheTypes.Type, 0)
+	)
+
+	for _, t := range pkg.Types {
+		alias, imp := utils.FindImportWithPath(*t.File(), "github.com/KlyuchnikovV/webapi")
+		if imp == nil {
+			continue
+		}
+
+		if t.Implements(constants.RoutersInterface(alias, imp.Path.Value)) {
+			result = append(result, t)
+		}
+	}
+
+	// ast.Inspect(&file, func(n ast.Node) bool {
+	// 	fun, ok := n.(*ast.FuncDecl)
+	// 	if !ok {
+	// 		return true
+	// 	}
+
+	// 	if fun.Recv == nil || len(fun.Recv.List) == 0 {
+	// 		return true
+	// 	}
+
+	// 	if err := CheckFuncDeclaration(*fun, "Routers", nil, CheckRoutersResultType); err != nil {
+	// 		return true
+	// 	}
+
+	// 	ts, ok := fun.Recv.List[0].Type.(*ast.StarExpr)
+	// 	if !ok {
+	// 		return true
+	// 	}
+
+	// 	typeSpecs = append(typeSpecs, ts)
+
+	// 	return true
+	// })
+
+	// ast.Inspect(&file, func(n ast.Node) bool {
+	// 	funcDecl, ok := n.(*ast.FuncDecl)
+	// 	if !ok {
+	// 		return true
+	// 	}
+
+	// 	if len(funcDecl.Type.Results.List) != 1 {
+	// 		return true
+	// 	}
+
+	// 	for _, typeSpec := range typeSpecs {
+	// 		if SameNodes(typeSpec, funcDecl.Type.Results.List[0].Type) {
+	// 			parser.services = append(parser.services, NewSelector("", funcDecl.Name.Name))
+	// 			break
+	// 		}
+	// 	}
+
+	// 	return true
+	// })
+
+	return nil
 }

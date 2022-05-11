@@ -1,8 +1,8 @@
-package parser
+package utils
 
 import (
-	"fmt"
 	"go/ast"
+	"strings"
 )
 
 func SameNodes(t1, t2 ast.Node) bool {
@@ -134,92 +134,62 @@ func SameNodes(t1, t2 ast.Node) bool {
 	}
 }
 
-func IsMethod(call ast.CallExpr, selector ast.SelectorExpr) bool {
-	callSel, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return false
-	}
+func FindImport(file ast.File, alias string) (string, *ast.ImportSpec) {
+	var (
+		result = alias
+		spec   *ast.ImportSpec
+	)
 
-	for ok {
-		var typed *ast.SelectorExpr
-		typed, ok = callSel.X.(*ast.SelectorExpr)
+	for i, imp := range file.Imports {
+		var curAlias string
 
-		if ok {
-			callSel = typed
+		if imp.Name != nil {
+			curAlias = imp.Name.Name
+		} else {
+			curAlias = strings.Trim(
+				imp.Path.Value[strings.LastIndex(imp.Path.Value, "/")+1:],
+				"\"",
+			)
+		}
+
+		if curAlias == alias {
+			result = strings.Trim(imp.Path.Value, "\"")
+			spec = file.Imports[i]
+
+			break
 		}
 	}
 
-	return SameNodes(callSel, &selector)
+	return result, spec
 }
 
-func NewSelector(prefix, fun string) ast.SelectorExpr {
-	return ast.SelectorExpr{
-		X:   &ast.Ident{Name: prefix},
-		Sel: &ast.Ident{Name: fun},
-	}
-}
+func FindImportWithPath(file ast.File, path string) (string, *ast.ImportSpec) {
+	var (
+		result string
+		spec   *ast.ImportSpec
+	)
 
-func CheckRoutersResultType(resultType ast.Expr) error {
-	mapType, ok := resultType.(*ast.MapType)
-	if !ok {
-		return fmt.Errorf("not a map")
-	}
-
-	ident, ok := mapType.Key.(*ast.Ident)
-	if !ok || ident.Name != "string" {
-		return fmt.Errorf("map's key is not a 'string'")
-	}
-
-	selector, ok := mapType.Value.(*ast.SelectorExpr)
-	if !ok {
-		return fmt.Errorf("map's value is of wrong type")
-	}
-
-	valuePackage, ok := selector.X.(*ast.Ident)
-	if !ok {
-		return fmt.Errorf("map's value package couldn't be defined")
-	}
-
-	if valuePackage.Name != "webapi" {
-		return fmt.Errorf("wrong map's value package")
-	}
-
-	if selector.Sel.Name != "RouterByPath" {
-		return fmt.Errorf("map's value is not a 'RouterByPath'")
-	}
-
-	return nil
-}
-
-func CheckFuncDeclaration(
-	funcDecl ast.FuncDecl,
-	name string,
-	params []func(ast.Expr) error,
-	results ...func(ast.Expr) error,
-) error {
-	if funcDecl.Name.Name != name {
-		return fmt.Errorf("not a '%s' func", name)
-	}
-
-	if len(params) != len(funcDecl.Type.Params.List) {
-		return fmt.Errorf("'%s' should have %d parameters", name, len(params))
-	}
-
-	for i, param := range params {
-		if err := param(funcDecl.Type.Params.List[i].Type); err != nil {
-			return err
+	for i, imp := range file.Imports {
+		if strings.Trim(imp.Path.Value, "\"") != path {
+			continue
 		}
-	}
 
-	if len(results) != len(funcDecl.Type.Results.List) {
-		return fmt.Errorf("'%s' should have %d results", name, len(params))
-	}
+		var curAlias string
 
-	for i, param := range params {
-		if err := param(funcDecl.Type.Results.List[i].Type); err != nil {
-			return err
+		if imp.Name != nil {
+			curAlias = imp.Name.Name
+		} else {
+			curAlias = strings.Trim(
+				imp.Path.Value[strings.LastIndex(imp.Path.Value, "/")+1:],
+				"\"",
+			)
 		}
+
+		result = curAlias
+		spec = file.Imports[i]
+
+		break
 	}
 
-	return nil
+	return result, spec
 }
