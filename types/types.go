@@ -275,6 +275,24 @@ func NewComponents() Components {
 	}
 }
 
+func (c *Components) Add(comp Components) {
+	for name, schema := range comp.Schemas {
+		c.Schemas[name] = schema
+	}
+
+	for name, parameter := range comp.Parameters {
+		c.Parameters[name] = parameter
+	}
+
+	for name, body := range comp.RequestBodies {
+		c.RequestBodies[name] = body
+	}
+
+	for name, response := range comp.Responses {
+		c.Responses[name] = response
+	}
+}
+
 type Response struct {
 	Description string             `json:"description"`
 	Content     map[string]Content `json:"content,omitempty"`

@@ -10,14 +10,10 @@ import (
 	"github.com/KlyuchnikovV/webapi-docs/constants"
 	"github.com/KlyuchnikovV/webapi-docs/service"
 	"github.com/KlyuchnikovV/webapi-docs/types"
-	"github.com/KlyuchnikovV/webapi-docs/utils"
 )
 
 type Parser struct {
-	variableName string
-	services     map[string]types.Type
-
-	notFoundImports []string
+	services map[string]types.Type
 
 	Spec *types.OpenAPISpec
 
@@ -28,12 +24,11 @@ type Parser struct {
 
 func NewParser(localPath, gopath string) Parser {
 	return Parser{
-		notFoundImports: make([]string, 0),
-		Spec:            types.NewOpenAPISpec(),
-		gopath:          gopath,
-		localPath:       localPath,
-		apiPrefix:       "api",
-		services:        make(map[string]types.Type),
+		Spec:      types.NewOpenAPISpec(),
+		gopath:    gopath,
+		localPath: localPath,
+		apiPrefix: "api",
+		services:  make(map[string]types.Type),
 	}
 }
 
@@ -52,25 +47,6 @@ func (parser *Parser) GenerateDocs(path string) (*types.OpenAPISpec, error) {
 }
 
 func (parser *Parser) extractEngineData(pkgs map[string]types.Package) {
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Pkg.Files {
-			var webapiPkgAlias, _ = utils.FindImportWithPath(*file, constants.WebapiPath)
-
-			if webapiPkgAlias == "" {
-				// Do not parse files that are not related to webapi.
-				continue
-			}
-
-			ast.Inspect(file, func(n ast.Node) bool {
-				parser.getVarName(n, webapiPkgAlias)
-
-				parser.getAPIPrefix(n)
-
-				return true
-			})
-		}
-	}
-
 	for _, pkg := range pkgs {
 		for _, fun := range pkg.Functions {
 			parser.getEngineInfo(fun)
@@ -151,21 +127,7 @@ func (parser *Parser) ParseServices(pkgs map[string]types.Package) error {
 				return err
 			}
 
-			for name, schema := range srv.Components.Schemas {
-				parser.Spec.Components.Schemas[name] = schema
-			}
-
-			for name, parameter := range srv.Components.Parameters {
-				parser.Spec.Components.Parameters[name] = parameter
-			}
-
-			for name, body := range srv.Components.RequestBodies {
-				parser.Spec.Components.RequestBodies[name] = body
-			}
-
-			for name, response := range srv.Components.Responses {
-				parser.Spec.Components.Responses[name] = response
-			}
+			parser.Spec.Components.Add(srv.Components)
 
 			for path, paths := range srv.Paths {
 				path = filepath.Join("/", parser.apiPrefix, path)
@@ -182,78 +144,6 @@ func (parser *Parser) ParseServices(pkgs map[string]types.Package) error {
 	}
 
 	return nil
-}
-
-func (parser *Parser) getVarName(n ast.Node, alias string) {
-	if n == nil {
-		return
-	}
-
-	var (
-		typed ast.Expr
-		name  string
-	)
-
-	switch t := n.(type) {
-	case *ast.AssignStmt:
-		typed = t.Rhs[0]
-
-		i, ok := t.Lhs[0].(*ast.Ident)
-		if !ok {
-			return
-		}
-
-		name = i.Name
-	case *ast.KeyValueExpr:
-		typed = t.Value
-
-		switch n := t.Key.(type) {
-		case *ast.Ident:
-			name = n.Name
-		case *ast.BasicLit:
-			name = n.Value
-		}
-	default:
-		return
-	}
-
-	callExpr, ok := typed.(*ast.CallExpr)
-	if !ok {
-		return
-	}
-
-	if !IsMethod(*callExpr, NewSelector(alias, "New")) {
-		return
-	}
-
-	parser.variableName = name
-
-	url := strings.Trim(callExpr.Args[0].(*ast.BasicLit).Value, "\"")
-
-	if len(url) > 0 && url[0] == ':' {
-		url = fmt.Sprintf("http://localhost%s", url)
-	}
-
-	parser.Spec.Servers = append(parser.Spec.Servers, types.ServerInfo{
-		URL: url,
-	})
-}
-
-func (parser *Parser) getAPIPrefix(n ast.Node) {
-	if n == nil {
-		return
-	}
-
-	callExpr, ok := n.(*ast.CallExpr)
-	if !ok {
-		return
-	}
-
-	if !IsMethod(*callExpr, NewSelector(parser.variableName, "WithPrefix")) {
-		return
-	}
-
-	parser.apiPrefix = strings.Trim(callExpr.Args[0].(*ast.BasicLit).Value, "\"")
 }
 
 func (parser *Parser) getServiceSelector(serviceType types.Type) {
