@@ -3,14 +3,14 @@ package types
 import "go/ast"
 
 type InterfaceType struct {
-	typeBase
+	*typeBase
 
 	ts *ast.InterfaceType
 }
 
-func NewInterface(file *ast.File, name string, interf *ast.InterfaceType) InterfaceType {
+func NewInterface(file *ast.File, name string, interf *ast.InterfaceType, tag *ast.BasicLit) InterfaceType {
 	var result = InterfaceType{
-		typeBase: newTypeBase(file, name),
+		typeBase: newTypeBase(file, name, tag),
 		ts:       interf,
 	}
 
@@ -27,7 +27,7 @@ func NewInterface(file *ast.File, name string, interf *ast.InterfaceType) Interf
 
 func NewInterfaceFields(fields map[string]Type) InterfaceType {
 	return InterfaceType{
-		typeBase: typeBase{
+		typeBase: &typeBase{
 			fields: fields,
 		},
 	}

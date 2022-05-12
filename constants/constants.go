@@ -1,6 +1,12 @@
 package constants
 
-import "net/http"
+import (
+	"net/http"
+)
+
+const (
+	WebapiPath = "github.com/KlyuchnikovV/webapi"
+)
 
 var TypeParamsMap = map[string]string{
 	"Bool":    "bool",
@@ -8,40 +14,6 @@ var TypeParamsMap = map[string]string{
 	"Float":   "float64",
 	"String":  "string",
 	"Integer": "int64",
-}
-
-func ConvertFieldType(t string) (string, bool) {
-	var result string
-
-	switch t {
-	case "byte", "rune",
-		"uint", "uint8", "uint16", "uint32", "uint64",
-		"int", "int8", "int16", "int32", "int64":
-		result = "integer"
-	case "float32", "float64":
-		result = "number"
-	case "bool":
-		result = "boolean"
-	case "string", "time", "error":
-		result = "string"
-	}
-
-	return result, len(result) != 0
-}
-
-func GetFieldTypeFormat(t string) string {
-	switch t {
-	case "int32":
-		return "int32"
-	case "int64":
-		return "int64"
-	case "float32":
-		return "float"
-	case "float64":
-		return "double"
-	default:
-		return ""
-	}
 }
 
 func GetResultCode(t string) (int, CodeType) {
@@ -60,15 +32,15 @@ func GetResultCode(t string) (int, CodeType) {
 		return code, ClientError
 	}
 
-	code, ok = RedirectionCodes[t]
-	if ok {
-		return code, Redirection
-	}
+	// code, ok = RedirectionCodes[t]
+	// if ok {
+	// 	return code, Redirection
+	// }
 
-	code, ok = InfoCodes[t]
-	if ok {
-		return code, Info
-	}
+	// code, ok = InfoCodes[t]
+	// if ok {
+	// 	return code, Info
+	// }
 
 	return -1, Undefined
 }
@@ -76,20 +48,20 @@ func GetResultCode(t string) (int, CodeType) {
 type CodeType string
 
 const (
-	Undefined   CodeType = ""
-	Info        CodeType = "info"
-	Success     CodeType = "success"
-	Redirection CodeType = "redirection"
+	Undefined CodeType = ""
+	// Info        CodeType = "info"
+	Success CodeType = "success"
+	// Redirection CodeType = "redirection"
 	ClientError CodeType = "client error"
 	ServerError CodeType = "server error"
 )
 
-var InfoCodes = map[string]int{
-	"Continue":           http.StatusContinue,
-	"SwitchingProtocols": http.StatusSwitchingProtocols,
-	"Processing":         http.StatusProcessing,
-	"EarlyHints":         http.StatusEarlyHints,
-}
+// var InfoCodes = map[string]int{
+// 	"Continue":           http.StatusContinue,
+// 	"SwitchingProtocols": http.StatusSwitchingProtocols,
+// 	"Processing":         http.StatusProcessing,
+// 	"EarlyHints":         http.StatusEarlyHints,
+// }
 
 var SuccessCodes = map[string]int{
 	"OK":                   http.StatusOK,
@@ -104,16 +76,16 @@ var SuccessCodes = map[string]int{
 	"IMUsed":               http.StatusIMUsed,
 }
 
-var RedirectionCodes = map[string]int{
-	"MultipleChoices":   http.StatusMultipleChoices,
-	"MovedPermanently":  http.StatusMovedPermanently,
-	"Found":             http.StatusFound,
-	"SeeOther":          http.StatusSeeOther,
-	"NotModified":       http.StatusNotModified,
-	"UseProxy":          http.StatusUseProxy,
-	"TemporaryRedirect": http.StatusTemporaryRedirect,
-	"PermanentRedirect": http.StatusPermanentRedirect,
-}
+// var RedirectionCodes = map[string]int{
+// 	"MultipleChoices":   http.StatusMultipleChoices,
+// 	"MovedPermanently":  http.StatusMovedPermanently,
+// 	"Found":             http.StatusFound,
+// 	"SeeOther":          http.StatusSeeOther,
+// 	"NotModified":       http.StatusNotModified,
+// 	"UseProxy":          http.StatusUseProxy,
+// 	"TemporaryRedirect": http.StatusTemporaryRedirect,
+// 	"PermanentRedirect": http.StatusPermanentRedirect,
+// }
 
 var ClientErrorCodes = map[string]int{
 	"BadRequest":                   http.StatusBadRequest,

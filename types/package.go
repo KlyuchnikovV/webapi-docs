@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"strings"
 )
 
 type Package struct {
@@ -35,6 +36,11 @@ func NewPackage(pkg ast.Package) Package {
 					panic(err)
 				}
 
+				if t, ok := result.isConstructorOf(*fun); ok {
+					t.AddConstructor(*fun)
+					continue
+				}
+
 				if receiver != nil {
 					result.Types[receiver.Name()].AddMethod(*fun)
 				} else {
@@ -62,7 +68,7 @@ func newFromGenDecl(file *ast.File, decl *ast.GenDecl) []Type {
 			panic("not ts")
 		}
 
-		result[i] = NewType(file, ts.Name.Name, &ts.Type)
+		result[i] = NewType(file, ts.Name.Name, &ts.Type, nil)
 	}
 
 	return result
@@ -70,7 +76,7 @@ func newFromGenDecl(file *ast.File, decl *ast.GenDecl) []Type {
 
 func (pkg *Package) newFromFuncDecl(file *ast.File, decl *ast.FuncDecl) (*FuncType, Type, error) {
 	var (
-		fun      = NewFunc(file, decl.Type, decl.Name.Name, decl.Body.List)
+		fun      = NewFunc(file, decl.Type, decl.Name.Name, decl.Body.List, nil)
 		receiver Type
 	)
 
@@ -96,4 +102,23 @@ func receiverTypeName(f ast.Expr) string {
 	default:
 		panic("for now")
 	}
+}
+
+func (pkg *Package) isConstructorOf(fun FuncType) (Type, bool) {
+	if !strings.HasPrefix(fun.name, "New") {
+		return nil, false
+	}
+
+	t, ok := pkg.Types[strings.TrimPrefix(fun.name, "New")]
+	if !ok {
+		return nil, false
+	}
+
+	for _, result := range fun.Results {
+		if result.Name() == t.Name() {
+			return t, true
+		}
+	}
+
+	return nil, false
 }

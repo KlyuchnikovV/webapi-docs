@@ -1,25 +1,10 @@
 package constants
 
 import (
-	"github.com/KlyuchnikovV/webapi-docs/cache/types"
+	"github.com/KlyuchnikovV/webapi-docs/types"
 )
 
-// func EngineInterface() types.InterfaceType {
-// 	return types.NewInterfaceFields(map[string]types.Type{
-// 		"RegisterServices": types.NewFuncDeclaration(
-// 			"RegisterServices",
-// 			[]types.Type{
-// 				types.NewSimpleArrayType("", types.ImportedType{}),
-// 				// services ...webapi.ServiceAPI
-// 			},
-// 			[]types.Type{
-// 				types.NewSimpleBasicType("error"),
-// 			},
-// 		),
-// 	})
-// }
-
-func RoutersInterface(alias, path string) types.InterfaceType {
+func RoutersInterface() types.InterfaceType {
 	return types.NewInterfaceFields(map[string]types.Type{
 		"Routers": types.NewFuncDeclaration(
 			"Routers",
@@ -27,7 +12,7 @@ func RoutersInterface(alias, path string) types.InterfaceType {
 			[]types.Type{
 				types.NewSimpleMap("",
 					types.NewSimpleBasicType("string"),
-					types.NewSimpleImported(alias, path),
+					types.NewSimpleImported("RouterByPath", "github.com/KlyuchnikovV/webapi"),
 				),
 			},
 		),

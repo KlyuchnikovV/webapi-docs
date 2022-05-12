@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"fmt"
 	"go/ast"
 )
 
@@ -149,6 +148,7 @@ func IsMethod(call ast.CallExpr, selector ast.SelectorExpr) bool {
 		}
 	}
 
+	// TODO: remove method
 	return SameNodes(callSel, &selector)
 }
 
@@ -159,67 +159,3 @@ func NewSelector(prefix, fun string) ast.SelectorExpr {
 	}
 }
 
-func CheckRoutersResultType(resultType ast.Expr) error {
-	mapType, ok := resultType.(*ast.MapType)
-	if !ok {
-		return fmt.Errorf("not a map")
-	}
-
-	ident, ok := mapType.Key.(*ast.Ident)
-	if !ok || ident.Name != "string" {
-		return fmt.Errorf("map's key is not a 'string'")
-	}
-
-	selector, ok := mapType.Value.(*ast.SelectorExpr)
-	if !ok {
-		return fmt.Errorf("map's value is of wrong type")
-	}
-
-	valuePackage, ok := selector.X.(*ast.Ident)
-	if !ok {
-		return fmt.Errorf("map's value package couldn't be defined")
-	}
-
-	if valuePackage.Name != "webapi" {
-		return fmt.Errorf("wrong map's value package")
-	}
-
-	if selector.Sel.Name != "RouterByPath" {
-		return fmt.Errorf("map's value is not a 'RouterByPath'")
-	}
-
-	return nil
-}
-
-func CheckFuncDeclaration(
-	funcDecl ast.FuncDecl,
-	name string,
-	params []func(ast.Expr) error,
-	results ...func(ast.Expr) error,
-) error {
-	if funcDecl.Name.Name != name {
-		return fmt.Errorf("not a '%s' func", name)
-	}
-
-	if len(params) != len(funcDecl.Type.Params.List) {
-		return fmt.Errorf("'%s' should have %d parameters", name, len(params))
-	}
-
-	for i, param := range params {
-		if err := param(funcDecl.Type.Params.List[i].Type); err != nil {
-			return err
-		}
-	}
-
-	if len(results) != len(funcDecl.Type.Results.List) {
-		return fmt.Errorf("'%s' should have %d results", name, len(params))
-	}
-
-	for i, param := range params {
-		if err := param(funcDecl.Type.Results.List[i].Type); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}

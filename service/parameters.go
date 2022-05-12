@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	"github.com/KlyuchnikovV/webapi-docs/cache"
-	"github.com/KlyuchnikovV/webapi-docs/objects"
+	"github.com/KlyuchnikovV/webapi-docs/types"
 	"github.com/KlyuchnikovV/webapi-docs/utils"
 )
 
-func (srv *Service) ParseParameter(route *objects.Route, argument ast.CallExpr) error {
+func (srv *Service) ParseParameter(route *types.Route, argument ast.CallExpr) error {
 	if len(argument.Args) == 0 {
 		return fmt.Errorf("no arguments found")
 	}
@@ -22,15 +22,15 @@ func (srv *Service) ParseParameter(route *objects.Route, argument ast.CallExpr) 
 
 	switch selector.Sel.Name {
 	case "Body", "CustomBody":
-		name, schema, err := srv.NewInBody(route, argument.Args[0])
-		if err != nil {
-			return err
+		name, schema := srv.NewInBody(route, argument.Args[0])
+		if schema == nil {
+			panic("nil")
 		}
 
 		srv.Components.Schemas[name] = schema
-		srv.Components.RequestBodies[name] = objects.NewRequestBody(*objects.NewReference(name, "schemas"))
+		srv.Components.RequestBodies[name] = types.NewRequestBody(*types.NewReference(name, "schemas"))
 
-		route.RequestBody = objects.NewReference(name, "requestBodies")
+		route.RequestBody = types.NewReference(name, "requestBodies")
 	default:
 		var (
 			prefix string
@@ -51,7 +51,7 @@ func (srv *Service) ParseParameter(route *objects.Route, argument ast.CallExpr) 
 	return nil
 }
 
-func (srv *Service) NewInBody(route *objects.Route, arg ast.Expr) (string, objects.Schema, error) {
+func (srv *Service) NewInBody(route *types.Route, arg ast.Expr) (string, types.Schema) {
 	var selector ast.SelectorExpr
 
 	ast.Inspect(arg, func(n ast.Node) bool {
@@ -67,19 +67,17 @@ func (srv *Service) NewInBody(route *objects.Route, arg ast.Expr) (string, objec
 
 	model := cache.FindModel(selector)
 	if model == nil {
-		return "", nil, nil
+		return "", nil
 	}
 
-	schema, err := srv.Components.NewSchema2(model)
-
-	return model.Name(), schema, err
+	return model.Name(), model.Schema()
 }
 
-func (srv *Service) AddParameter(route *objects.Route, param objects.IParameter) {
+func (srv *Service) AddParameter(route *types.Route, param types.IParameter) {
 	var (
 		name  string
 		ok    = true
-		saved objects.IParameter
+		saved types.IParameter
 	)
 
 	for i := 0; ok; i++ {
@@ -91,7 +89,7 @@ func (srv *Service) AddParameter(route *objects.Route, param objects.IParameter)
 		}
 	}
 
-	route.Parameters = append(route.Parameters, objects.NewReference(name, "parameters"))
+	route.Parameters = append(route.Parameters, types.NewReference(name, "parameters"))
 
 	if saved == nil {
 		srv.Components.Parameters[name] = param

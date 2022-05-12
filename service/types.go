@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	"github.com/KlyuchnikovV/webapi-docs/constants"
-	"github.com/KlyuchnikovV/webapi-docs/objects"
+	"github.com/KlyuchnikovV/webapi-docs/types"
+	"github.com/KlyuchnikovV/webapi-docs/utils"
 )
 
 type (
@@ -20,74 +21,6 @@ type (
 		Version string `json:"version"`
 	}
 
-	// Response struct {
-	// 	Description string                     `json:"description"`
-	// 	Content     map[string]objects.Content `json:"content,omitempty"`
-	// }
-
-	// Components struct {
-	// 	Schemas       map[string]objects.Schema     `json:"schemas,omitempty"`
-	// 	Parameters    map[string]IParameter         `json:"parameters,omitempty"`
-	// 	RequestBodies map[string]types2.RequestBody `json:"requestBodies,omitempty"`
-
-	// 	Responses map[string]Response `json:"responses,omitempty"`
-	// }
-
-	// Route struct {
-	// 	Summary     string                     `json:"summary,omitempty"`
-	// 	Tags        []string                   `json:"tags,omitempty"`
-	// 	Parameters  []IParameter               `json:"parameters,omitempty"`
-	// 	RequestBody *objects.Reference         `json:"requestBody,omitempty"`
-	// 	Responses   map[int]*objects.Reference `json:"responses"`
-	// }
-
-	// SwaggerSpec struct {
-	// 	Openapi    string                      `json:"openapi"`
-	// 	Info       Info                        `json:"info"`
-	// 	Servers    []Server                    `json:"servers"`
-	// 	Components Components                  `json:"components"`
-	// 	Paths      map[string]map[string]Route `json:"paths"`
-	// }
-)
-
-// func NewResponse(desc string, ref objects.Reference) Response {
-// 	return Response{
-// 		Description: desc,
-// 		Content: map[string]objects.Content{
-// 			// TODO: multiple schemas
-// 			"application/json": {
-// 				Schema: ref,
-// 			},
-// 		},
-// 	}
-// }
-
-// func NewSwaggerSpec(servers ...Server) *SwaggerSpec {
-// 	return &SwaggerSpec{
-// 		Openapi: "3.0.3",
-// 		Info: Info{
-// 			Version: "3.0.3",
-// 		},
-// 		Servers: servers,
-// 		Paths:   make(map[string]map[string]Route),
-// 		Components: Components{
-// 			Schemas:       make(map[string]objects.Schema),
-// 			Parameters:    make(map[string]IParameter),
-// 			RequestBodies: make(map[string]types2.RequestBody),
-// 			Responses:     make(map[string]Response),
-// 		},
-// 	}
-// }
-
-// func NewRoute() *Route {
-// 	return &Route{
-// 		Parameters: make([]IParameter, 0),
-// 		Responses:  make(map[int]*objects.Reference),
-// 		Tags:       make([]string, 0),
-// 	}
-// }
-
-type (
 	IParameter interface {
 		NameParam() string
 		Type() string
@@ -95,23 +28,23 @@ type (
 	}
 
 	Parameter struct {
-		In          string             `json:"in"`
-		Name        string             `json:"name"`
-		Required    bool               `json:"required"`
-		Minimum     int                `json:"minimum,omitempty"`
-		Description string             `json:"description,omitempty"`
-		RequestBody *objects.Reference `json:"requestBody,omitempty"`
-		Schema      objects.Schema     `json:"schema,omitempty"`
+		In          string           `json:"in"`
+		Name        string           `json:"name"`
+		Required    bool             `json:"required"`
+		Minimum     int              `json:"minimum,omitempty"`
+		Description string           `json:"description,omitempty"`
+		RequestBody *types.Reference `json:"requestBody,omitempty"`
+		Schema      types.Schema     `json:"schema,omitempty"`
 	}
 )
 
 func NewParameter(paramType string, t string, args []ast.Expr) Parameter {
 	var (
-		fieldType, _ = constants.ConvertFieldType(constants.TypeParamsMap[t])
-		parameter    = Parameter{
+		fieldType = utils.ConvertFieldType(constants.TypeParamsMap[t])
+		parameter = Parameter{
 			In:       paramType,
 			Required: true,
-			Schema: objects.Object{
+			Schema: types.ObjectSchema{
 				Type: fieldType,
 			},
 		}
@@ -176,7 +109,7 @@ func (i Parameter) EqualTo(p interface{}) bool {
 		return false
 	}
 
-	if i.RequestBody != nil && !i.RequestBody.EqualTo(typed.RequestBody) {
+	if i.RequestBody != nil && !i.RequestBody.EqualTo(*typed.RequestBody) {
 		return false
 	}
 

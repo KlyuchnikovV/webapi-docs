@@ -4,13 +4,10 @@ import (
 	"fmt"
 	"go/ast"
 	"path/filepath"
-
 	"strings"
 
 	"github.com/KlyuchnikovV/webapi-docs/cache"
-	cacheTypes "github.com/KlyuchnikovV/webapi-docs/cache/types"
 	"github.com/KlyuchnikovV/webapi-docs/constants"
-	"github.com/KlyuchnikovV/webapi-docs/objects"
 	"github.com/KlyuchnikovV/webapi-docs/service"
 	"github.com/KlyuchnikovV/webapi-docs/types"
 	"github.com/KlyuchnikovV/webapi-docs/utils"
@@ -18,16 +15,15 @@ import (
 
 type Parser struct {
 	variableName string
-	services     []ast.SelectorExpr
+	services     map[string]types.Type
 
 	notFoundImports []string
 
 	Spec *types.OpenAPISpec
 
-	gopath         string
-	localPath      string
-	apiPrefix      string
-	loopController map[string]struct{}
+	gopath    string
+	localPath string
+	apiPrefix string
 }
 
 func NewParser(localPath, gopath string) Parser {
@@ -36,51 +32,29 @@ func NewParser(localPath, gopath string) Parser {
 		Spec:            types.NewOpenAPISpec(),
 		gopath:          gopath,
 		localPath:       localPath,
-		loopController:  make(map[string]struct{}),
 		apiPrefix:       "api",
+		services:        make(map[string]types.Type),
 	}
 }
 
 func (parser *Parser) GenerateDocs(path string) (*types.OpenAPISpec, error) {
-	cache.Init2(parser.gopath, parser.localPath, path)
+	cache.Init(parser.gopath, parser.localPath, path)
 
-	if err := parser.extractEngineData(); err != nil {
-		return nil, err
-	}
+	var packages = cache.GetPackages()
 
-	if err := parser.ParseServices(); err != nil {
+	parser.extractEngineData(packages)
+
+	if err := parser.ParseServices(packages); err != nil {
 		return nil, err
 	}
 
 	return parser.Spec, nil
 }
 
-func (parser *Parser) extractEngineData() error {
-	for _, pkg := range cache.GetPackages() {
-
-		// for _, fun := range pkg.Functions {
-		// 	for _, stmt := range fun.Body { // TODO: lookup methods for body parsing
-		// 		ast.Inspect(stmt, func(n ast.Node) bool {
-		// 			call, ok := n.(*ast.CallExpr)
-		// 			if !ok {
-		// 				return true
-		// 			}
-
-		// 			fun, ok := call.Fun.(*ast.SelectorExpr)
-		// 			if !ok {
-		// 				return true
-		// 			}
-
-		// 			method := cache.FindMethod2(*fun)
-		// 			fmt.Print(method)
-
-		// 			return true
-		// 		})
-		// 	}
-		// }
-
+func (parser *Parser) extractEngineData(pkgs map[string]types.Package) {
+	for _, pkg := range pkgs {
 		for _, file := range pkg.Pkg.Files {
-			var webapiPkgAlias, _ = utils.FindImportWithPath(*file, "github.com/KlyuchnikovV/webapi")
+			var webapiPkgAlias, _ = utils.FindImportWithPath(*file, constants.WebapiPath)
 
 			if webapiPkgAlias == "" {
 				// Do not parse files that are not related to webapi.
@@ -92,61 +66,90 @@ func (parser *Parser) extractEngineData() error {
 
 				parser.getAPIPrefix(n)
 
-				parser.getServiceSelectors(n)
-
 				return true
 			})
 		}
 	}
 
-	if len(parser.services) != 0 {
-		return nil
-	}
-
-	for _, pkg := range cache.GetPackages() {
-		// for _, file := range pkg.Pkg.Files {
-		if err := parser.getServiceSelector(pkg); err != nil {
-			return err
+	for _, pkg := range pkgs {
+		for _, fun := range pkg.Functions {
+			parser.getEngineInfo(fun)
 		}
-		// }
-	}
 
-	return nil
-}
+		for _, t := range pkg.Types {
+			for _, fun := range t.Constructors() {
+				parser.getEngineInfo(fun)
+			}
 
-func (parser *Parser) ParseServices() error {
-	// for _, selector := range parser.services {
-	// 	if selector.Sel == nil {
-	// 		continue
-	// 	}
-
-	for _, pkg := range cache.GetPackages() {
-		// fmt.Printf("%#v\n", cache.FindMethod2(selector))
-
-		// for _, file := range pkg.Files {
-		// obj := file.Scope.Lookup(selector.Sel.Name)
-		// if obj == nil {
-		// 	continue
-		// }
-
-		// funcDecl, ok := obj.Decl.(*ast.FuncDecl)
-		// if !ok {
-		// 	continue
-		// }
-
-		for _, model := range pkg.Types {
-			if fun := model.Method("Routers"); fun == nil {
+			if !t.Implements(constants.RoutersInterface()) {
 				continue
 			}
 
-			var srv = service.New(pkg, model, "")
+			parser.getServiceSelector(t)
+		}
+	}
+}
+
+func (parser *Parser) getEngineInfo(fun types.FuncType) {
+	var (
+		file       = fun.File()
+		engineNew  = types.NewSimpleImported("New", constants.WebapiPath)
+		withPrefix = types.NewSimpleImported("WithPrefix", constants.WebapiPath)
+	)
+
+	for _, stmt := range fun.Body {
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+
+			imp := types.NewImported(file, sel, nil)
+			if imp == nil {
+				return true
+			}
+
+			if !imp.EqualTo(engineNew) {
+				if imp.EqualTo(withPrefix) {
+					parser.apiPrefix = strings.Trim(call.Args[0].(*ast.BasicLit).Value, "\"")
+				}
+
+				return true
+			}
+
+			var url = strings.Trim(call.Args[0].(*ast.BasicLit).Value, "\"")
+
+			if len(url) > 0 && url[0] == ':' {
+				url = fmt.Sprintf("http://localhost%s", url)
+			}
+
+			parser.Spec.Servers = append(parser.Spec.Servers,
+				types.ServerInfo{
+					URL: url,
+				},
+			)
+
+			return true
+		})
+	}
+}
+
+func (parser *Parser) ParseServices(pkgs map[string]types.Package) error {
+	for prefix, model := range parser.services {
+		for _, pkg := range pkgs {
+			if _, ok := pkg.Types[model.Name()]; !ok {
+				continue
+			}
+
+			var srv = service.New(pkg, model, prefix)
 			if err := srv.Parse(); err != nil {
 				return err
 			}
-
-			// if err := srv.Parse(*file, *funcDecl); err != nil {
-			// 	return err
-			// }
 
 			for name, schema := range srv.Components.Schemas {
 				parser.Spec.Components.Schemas[name] = schema
@@ -168,24 +171,15 @@ func (parser *Parser) ParseServices() error {
 				path = filepath.Join("/", parser.apiPrefix, path)
 
 				if _, ok := parser.Spec.Paths[path]; !ok {
-					parser.Spec.Paths[path] = make(map[string]objects.Route)
+					parser.Spec.Paths[path] = make(map[string]types.Route)
 				}
 
 				for method, handler := range paths {
 					parser.Spec.Paths[path][method] = handler
 				}
 			}
-
-			// var srv = NewService(parser, *pkg, *funcDecl)
-			// if err := srv.ParseService(*file, *funcDecl); err != nil {
-			// 	return err
-			// }
 		}
-
 	}
-
-	// }
-	// }
 
 	return nil
 }
@@ -262,105 +256,52 @@ func (parser *Parser) getAPIPrefix(n ast.Node) {
 	parser.apiPrefix = strings.Trim(callExpr.Args[0].(*ast.BasicLit).Value, "\"")
 }
 
-func (parser *Parser) getServiceSelectors(n ast.Node) {
-	if n == nil {
-		return
-	}
+func (parser *Parser) getServiceSelector(serviceType types.Type) {
+	for _, constructor := range serviceType.Constructors() {
+		for _, ret := range constructor.ReturnStatements() {
+			for _, res := range ret.Results {
+				unary, ok := res.(*ast.UnaryExpr)
+				if !ok {
+					continue
+				}
 
-	call, ok := n.(*ast.CallExpr)
-	if !ok {
-		return
-	}
+				composite, ok := unary.X.(*ast.CompositeLit)
+				if !ok {
+					continue
+				}
 
-	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return
-	}
-
-	if selector.Sel.Name != "RegisterServices" {
-		// TODO: check type - using tags
-		return
-	}
-
-	for _, arg := range call.Args {
-		call, ok := arg.(*ast.CallExpr)
-		if !ok {
-			continue
+				parser.parseServiceConstructor(serviceType, composite.Elts)
+			}
 		}
-
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return
-		}
-
-		if selector.Sel == nil {
-			return
-		}
-
-		parser.services = append(parser.services, *selector)
 	}
 }
 
-func (parser *Parser) getServiceSelector(pkg cacheTypes.Package) error {
-	var (
-		// typeSpecs = make([]*ast.StarExpr, 0)
-		result = make([]cacheTypes.Type, 0)
-	)
-
-	for _, t := range pkg.Types {
-		alias, imp := utils.FindImportWithPath(*t.File(), "github.com/KlyuchnikovV/webapi")
-		if imp == nil {
+func (parser *Parser) parseServiceConstructor(serviceType types.Type, exprs []ast.Expr) {
+	for _, elt := range exprs {
+		keyValue, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
 			continue
 		}
 
-		if t.Implements(constants.RoutersInterface(alias, imp.Path.Value)) {
-			result = append(result, t)
+		star, ok := keyValue.Value.(*ast.StarExpr)
+		if !ok {
+			continue
+		}
+
+		call, ok := star.X.(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+
+		if types.NewImported(serviceType.File(), sel, nil).EqualTo(
+			types.NewSimpleImported("NewService", constants.WebapiPath),
+		) {
+			parser.services[strings.Trim(call.Args[1].(*ast.BasicLit).Value, "\"")] = serviceType
 		}
 	}
-
-	// ast.Inspect(&file, func(n ast.Node) bool {
-	// 	fun, ok := n.(*ast.FuncDecl)
-	// 	if !ok {
-	// 		return true
-	// 	}
-
-	// 	if fun.Recv == nil || len(fun.Recv.List) == 0 {
-	// 		return true
-	// 	}
-
-	// 	if err := CheckFuncDeclaration(*fun, "Routers", nil, CheckRoutersResultType); err != nil {
-	// 		return true
-	// 	}
-
-	// 	ts, ok := fun.Recv.List[0].Type.(*ast.StarExpr)
-	// 	if !ok {
-	// 		return true
-	// 	}
-
-	// 	typeSpecs = append(typeSpecs, ts)
-
-	// 	return true
-	// })
-
-	// ast.Inspect(&file, func(n ast.Node) bool {
-	// 	funcDecl, ok := n.(*ast.FuncDecl)
-	// 	if !ok {
-	// 		return true
-	// 	}
-
-	// 	if len(funcDecl.Type.Results.List) != 1 {
-	// 		return true
-	// 	}
-
-	// 	for _, typeSpec := range typeSpecs {
-	// 		if SameNodes(typeSpec, funcDecl.Type.Results.List[0].Type) {
-	// 			parser.services = append(parser.services, NewSelector("", funcDecl.Name.Name))
-	// 			break
-	// 		}
-	// 	}
-
-	// 	return true
-	// })
-
-	return nil
 }

@@ -7,23 +7,20 @@ import (
 )
 
 type ImportedType struct {
-	typeBase
+	*typeBase
 
 	Package string
 	ts      *ast.SelectorExpr
 	imp     *ast.ImportSpec
 }
 
-func NewImported(file *ast.File, selector *ast.SelectorExpr) *ImportedType {
-	ident, ok := selector.X.(*ast.Ident)
-	if !ok {
-		return nil
-	}
+func NewImported(file *ast.File, selector *ast.SelectorExpr, tag *ast.BasicLit) *ImportedType {
+	var name = getBaseTypeAlias(selector, 0)
 
-	var path, imp = utils.FindImport(*file, ident.Name)
+	var path, imp = utils.FindImport(*file, name)
 
 	return &ImportedType{
-		typeBase: newTypeBase(file, selector.Sel.Name),
+		typeBase: newTypeBase(file, selector.Sel.Name, tag),
 
 		Package: path,
 		imp:     imp,
@@ -34,22 +31,17 @@ func NewImported(file *ast.File, selector *ast.SelectorExpr) *ImportedType {
 
 func NewSimpleImported(name, path string) ImportedType {
 	return ImportedType{
-		typeBase: typeBase{
+		typeBase: &typeBase{
 			name: name,
 		},
+		Package: path,
 	}
 }
 
 func (i ImportedType) AddMethod(FuncType) {}
 
-
 func (i ImportedType) Field(name string) Type {
-	// if i.fields != nil {
-		return i.Field(name)
-	// }
-
-	// ParsePackage
-
+	return i.Field(name)
 }
 
 func (i ImportedType) Method(name string) *FuncType {
@@ -67,3 +59,19 @@ func (i ImportedType) Fields() map[string]Type {
 	return nil
 }
 
+func (i ImportedType) Schema() Schema {
+	return nil
+}
+
+func (i ImportedType) EqualTo(t Type) bool {
+	it, ok := t.(ImportedType)
+	if !ok {
+		return false
+	}
+
+	if i.Package != it.Package {
+		return false
+	}
+
+	return i.typeBase.EqualTo(it)
+}

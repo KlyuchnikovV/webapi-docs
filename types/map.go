@@ -3,7 +3,7 @@ package types
 import "go/ast"
 
 type MapType struct {
-	typeBase
+	*typeBase
 
 	Key   Type
 	Value Type
@@ -11,12 +11,12 @@ type MapType struct {
 	ts *ast.MapType
 }
 
-func NewMap(file *ast.File, name string, str *ast.MapType) MapType {
+func NewMap(file *ast.File, name string, str *ast.MapType, tag *ast.BasicLit) MapType {
 	return MapType{
-		typeBase: newTypeBase(file, name),
+		typeBase: newTypeBase(file, name, nil),
 
-		Key:   NewType(file, "", &str.Key),
-		Value: NewType(file, "", &str.Value),
+		Key:   NewType(file, "", &str.Key, nil),
+		Value: NewType(file, "", &str.Value, nil),
 
 		ts: str,
 	}
@@ -24,7 +24,7 @@ func NewMap(file *ast.File, name string, str *ast.MapType) MapType {
 
 func NewSimpleMap(name string, key Type, value Type) MapType {
 	return MapType{
-		typeBase: typeBase{
+		typeBase: &typeBase{
 			name: name,
 		},
 

@@ -1,20 +1,23 @@
 package types
 
-import "go/ast"
+import (
+	"go/ast"
+)
 
 type FuncType struct {
-	typeBase
+	*typeBase
 
 	Parameters []Type
 	Results    []Type
+	Statements []interface{}
 
 	Body []ast.Stmt
 	decl *ast.FuncType
 }
 
-func NewFunc(file *ast.File, decl *ast.FuncType, name string, body []ast.Stmt) FuncType {
+func NewFunc(file *ast.File, decl *ast.FuncType, name string, body []ast.Stmt, tag *ast.BasicLit) FuncType {
 	var result = FuncType{
-		typeBase: newTypeBase(file, name),
+		typeBase: newTypeBase(file, name, tag),
 
 		Parameters: make([]Type, 0),
 		Results:    make([]Type, 0),
@@ -36,6 +39,16 @@ func NewFunc(file *ast.File, decl *ast.FuncType, name string, body []ast.Stmt) F
 		}
 	}
 
+	// for _, stmt := range body {
+	// 	switch typed := stmt.(type) {
+	// 	case *ast.ReturnStmt:
+	// 		r := NewReturn(file, *typed)
+	// 		bytes, _ := json.Marshal(r)
+
+	// 		fmt.Printf("stmt: %s\n", string(bytes))
+	// 	}
+	// }
+
 	return result
 }
 
@@ -50,7 +63,7 @@ func NewMethodFromField(file *ast.File, field *ast.Field) (string, *FuncType) {
 		return name, nil
 	}
 
-	var t = NewFunc(file, ft, name, nil)
+	var t = NewFunc(file, ft, name, nil, nil)
 	if name == "" {
 		name = t.Name()
 	}
@@ -60,7 +73,7 @@ func NewMethodFromField(file *ast.File, field *ast.Field) (string, *FuncType) {
 
 func NewFuncDeclaration(name string, params []Type, results []Type) FuncType {
 	return FuncType{
-		typeBase: typeBase{
+		typeBase: &typeBase{
 			name: name,
 		},
 		Parameters: params,

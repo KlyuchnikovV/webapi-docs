@@ -8,9 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/KlyuchnikovV/webapi-docs/cache/types"
-	"github.com/KlyuchnikovV/webapi-docs/packages"
-	"github.com/KlyuchnikovV/webapi-docs/utils"
+	"github.com/KlyuchnikovV/webapi-docs/types"
 )
 
 // TODO: cache of all files for searching for models and methods
@@ -18,23 +16,14 @@ import (
 var innerCache *cache
 
 type cache struct {
-	packages  map[string]*packages.Package
 	gopath    string
 	localPath string
 
 	newPackages map[string]types.Package
 }
 
-func Init(gopath, localPath string, packages map[string]*packages.Package) {
-	innerCache = &cache{
-		gopath:    gopath,
-		localPath: localPath,
-		packages:  packages,
-	}
-}
-
-func Init2(gopath, localPath string, path string) {
-	packages, err := packages.ParseDirectory(path)
+func Init(gopath, localPath string, path string) {
+	packages, err := ParseDirectory(path, localPath)
 	if err != nil {
 		panic(err)
 	}
@@ -42,12 +31,7 @@ func Init2(gopath, localPath string, path string) {
 	innerCache = &cache{
 		gopath:      gopath,
 		localPath:   localPath,
-		packages:    packages,
-		newPackages: make(map[string]types.Package),
-	}
-
-	for _, pkg := range packages {
-		innerCache.newPackages[pkg.Name] = types.NewPackage(pkg.Package)
+		newPackages: packages,
 	}
 }
 
@@ -57,63 +41,6 @@ func GetPackages() map[string]types.Package {
 
 func GetNewPackage(pkg string) types.Package {
 	return innerCache.newPackages[pkg]
-}
-
-func FindMethodByName(receiver ast.TypeSpec, name string) *ast.FuncDecl {
-	var result *ast.FuncDecl
-
-	var pkgName string
-
-	for name, pkg := range innerCache.packages {
-		for _, file := range pkg.Files {
-			object := file.Scope.Lookup(receiver.Name.Name)
-			if object == nil {
-				continue
-			}
-
-			typeSpec, ok := object.Decl.(*ast.TypeSpec)
-			if !ok {
-				continue
-			}
-
-			if packages.SameNodes(&receiver, typeSpec) {
-				pkgName = name
-				break
-			}
-		}
-	}
-
-	for _, file := range innerCache.packages[pkgName].Files {
-		ast.Inspect(file, func(n ast.Node) bool {
-			funcDecl, ok := n.(*ast.FuncDecl)
-			if !ok {
-				return true
-			}
-
-			if funcDecl.Name.Name != name {
-				return true
-			}
-
-			if !packages.IsReceiverOfType(*funcDecl, receiver) {
-				return true
-			}
-
-			result = funcDecl
-			return false
-		})
-	}
-
-	return result
-}
-
-func FindMethod(receiver ast.TypeSpec, declaration ast.FuncDecl) *ast.FuncDecl {
-	var method = FindMethodByName(receiver, declaration.Name.Name)
-
-	if !utils.SameNodes(method, &declaration) {
-		return nil
-	}
-
-	return method
 }
 
 func ParsePackage(path string) error {
@@ -138,38 +65,10 @@ func ParsePackage(path string) error {
 			newPath = fmt.Sprintf("%s/%s", path, name[index+1:])
 		}
 
-		innerCache.packages[newPath] = packages.NewPackage(*pkg)
 		innerCache.newPackages[newPath] = types.NewPackage(*pkg)
 	}
 
 	return nil
-}
-
-// func (c *cache) FindModelBySelector(name string) (*ast.Object, error) {
-// 	var obj *ast.Object
-
-// 	for _, pkg := range c.packages {
-// 		for _, file := range pkg.Files {
-// 			obj = file.Scope.Lookup(name)
-// 			if obj != nil {
-// 				break
-// 			}
-// 		}
-
-// 		if obj != nil {
-// 			break
-// 		}
-// 	}
-
-// 	if obj == nil {
-// 		return nil, fmt.Errorf("no model found for name: '%s'", name)
-// 	}
-
-// 	return obj, nil
-// }
-
-func FindAliasOfWebAPI(pkg, fileName string) string {
-	return FindAliasOfWebAPIInFile(*innerCache.packages[pkg].Files[fileName])
 }
 
 func FindAliasOfWebAPIInFile(file ast.File) string {
@@ -231,8 +130,6 @@ func FindModel(selector ast.SelectorExpr) types.Type {
 
 	pkg, ok := innerCache.newPackages[ident.Name]
 	if !ok {
-
-		// ParsePackage()
 		return nil
 	}
 
@@ -250,45 +147,10 @@ func FindMethod2(selector ast.SelectorExpr) types.FuncType {
 	default:
 		panic("not ok")
 	}
+
 	if model == nil {
 		panic("!ok")
 	}
 
 	return *model.Method(selector.Sel.Name)
-}
-
-func GetPackageByImportAlias(file ast.File, alias string) *packages.Package {
-	var path string
-
-	for _, imp := range file.Imports {
-		if imp.Name != nil {
-			if imp.Name.Name == alias {
-				path = strings.Trim(imp.Path.Value, "\"")
-				break
-			}
-
-			continue
-		}
-
-		if strings.HasSuffix(strings.Trim(imp.Path.Value, "\""), alias) {
-			path = strings.Trim(imp.Path.Value, "\"")
-			break
-		}
-	}
-
-	pkg, ok := innerCache.packages[path]
-	if ok {
-		return pkg
-	}
-
-	if err := ParsePackage(path); err != nil {
-		panic(err)
-	}
-
-	pkg, ok = innerCache.packages[path]
-	if ok {
-		return pkg
-	}
-
-	return nil
 }
