@@ -3,11 +3,13 @@ package parser
 import (
 	"fmt"
 	"go/ast"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/KlyuchnikovV/webapi-docs/cache"
 	"github.com/KlyuchnikovV/webapi-docs/constants"
+	"github.com/KlyuchnikovV/webapi-docs/pkg"
 	"github.com/KlyuchnikovV/webapi-docs/service"
 	"github.com/KlyuchnikovV/webapi-docs/types"
 )
@@ -19,21 +21,31 @@ type Parser struct {
 
 	gopath    string
 	localPath string
+	path      string
+
 	apiPrefix string
 }
 
-func NewParser(localPath, gopath string) Parser {
-	return Parser{
+func NewParser(path string) (*Parser, error) {
+	localPath, gopath, err := getBasePath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Parser{
 		Spec:      types.NewOpenAPISpec(),
 		gopath:    gopath,
-		localPath: localPath,
+		localPath: strings.Trim(localPath, "/"),
+		path:      path,
 		apiPrefix: "api",
 		services:  make(map[string]types.Type),
-	}
+	}, nil
 }
 
-func (parser *Parser) GenerateDocs(path string) (*types.OpenAPISpec, error) {
-	cache.Init(parser.gopath, parser.localPath, path)
+func (parser *Parser) GenerateDocs() (*types.OpenAPISpec, error) {
+	if err := cache.Init(parser.gopath, parser.localPath, parser.path); err != nil {
+		return nil, err
+	}
 
 	var packages = cache.GetPackages()
 
@@ -46,7 +58,7 @@ func (parser *Parser) GenerateDocs(path string) (*types.OpenAPISpec, error) {
 	return parser.Spec, nil
 }
 
-func (parser *Parser) extractEngineData(pkgs map[string]types.Package) {
+func (parser *Parser) extractEngineData(pkgs map[string]pkg.Package) {
 	for _, pkg := range pkgs {
 		for _, fun := range pkg.Functions {
 			parser.getEngineInfo(fun)
@@ -73,6 +85,7 @@ func (parser *Parser) getEngineInfo(fun types.FuncType) {
 		withPrefix = types.NewSimpleImported("WithPrefix", constants.WebapiPath)
 	)
 
+	// TODO: parse register services
 	for _, stmt := range fun.Body {
 		ast.Inspect(stmt, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
@@ -115,7 +128,7 @@ func (parser *Parser) getEngineInfo(fun types.FuncType) {
 	}
 }
 
-func (parser *Parser) ParseServices(pkgs map[string]types.Package) error {
+func (parser *Parser) ParseServices(pkgs map[string]pkg.Package) error {
 	for prefix, model := range parser.services {
 		for _, pkg := range pkgs {
 			if _, ok := pkg.Types[model.Name()]; !ok {
@@ -194,4 +207,23 @@ func (parser *Parser) parseServiceConstructor(serviceType types.Type, exprs []as
 			parser.services[strings.Trim(call.Args[1].(*ast.BasicLit).Value, "\"")] = serviceType
 		}
 	}
+}
+
+func getBasePath(path string) (string, string, error) {
+	var (
+		gopath     = os.Getenv("GOPATH")
+		srcDirPath = filepath.Join(gopath, "src/")
+	)
+
+	if len(gopath) == 0 {
+		// TODO: disable error in private mode
+		return "", "", fmt.Errorf("GOPATH must be provided")
+	}
+
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return "", "", err
+	}
+
+	return absolutePath[strings.LastIndex(absolutePath, srcDirPath)+len(srcDirPath):], gopath, nil
 }

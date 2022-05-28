@@ -80,7 +80,7 @@ func NewType(file *ast.File, name string, ts *ast.Expr, tag *ast.BasicLit) Type 
 	case *ast.MapType:
 		result = NewMap(file, name, typed, tag)
 	case *ast.FuncType:
-		result = NewFunc(file, typed, name, nil, tag)
+		result = NewFuncFromType(file, typed, name)
 	case *ast.Ellipsis:
 		result = NewType(file, name, &typed.Elt, tag)
 	case *ast.ChanType:
@@ -94,7 +94,7 @@ func NewType(file *ast.File, name string, ts *ast.Expr, tag *ast.BasicLit) Type 
 	case *ast.IndexExpr:
 		result = NewType(file, name, &typed.X, tag)
 	case *ast.FuncLit:
-		result = NewFunc(file, typed.Type, name, nil, tag)
+		result = NewFuncFromType(file, typed.Type, name)
 	case *ast.BinaryExpr:
 		result = NewType(file, name, &typed.X, tag)
 	case *ast.BasicLit:
@@ -422,4 +422,58 @@ func getBaseTypeAliasFromObj(obj ast.Object, i int) string {
 	}
 
 	return ""
+}
+
+func NewValue(expr ast.Expr, targetType Type) ReturnStatement {
+	var result ReturnStatement
+
+	switch typed := expr.(type) {
+	// case *ast.ArrayType:
+	// 	result = NewArray(file, name, typed, &typed.Elt, tag)
+	// case *ast.StructType:
+	// 	result = NewStruct(file, name, typed, tag)
+	// case *ast.InterfaceType:
+	// 	result = NewInterface(file, name, typed, tag)
+	// case *ast.Ident:
+	// 	result = NewBasic(file, name, typed, tag)
+	case *ast.SelectorExpr:
+		result = ReturnStatement{
+			Type: targetType,
+		}
+	// 	result = NewImported(file, typed, tag)
+	// case *ast.StarExpr:
+	// 	result = NewType(file, name, &typed.X, tag)
+	// case *ast.MapType:
+	// 	result = NewMap(file, name, typed, tag)
+	// case *ast.FuncType:
+	// 	result = NewFuncFromType(file, typed, name)
+	// case *ast.Ellipsis:
+	// 	result = NewType(file, name, &typed.Elt, tag)
+	// case *ast.ChanType:
+	// 	result = NewType(file, name, &typed.Value, tag)
+	case *ast.UnaryExpr:
+		return NewValue(typed.X, targetType)
+	case *ast.CompositeLit:
+		result = ReturnStatement{
+			Type: targetType,
+
+			Value: typed,
+		}
+	// 	result = NewType(file, name, &typed.Type, tag)
+	case *ast.CallExpr:
+		return NewValue(typed.Fun, targetType)
+	// 	result = NewType(file, name, &typed.Fun, tag)
+	// case *ast.IndexExpr:
+	// 	result = NewType(file, name, &typed.X, tag)
+	// case *ast.FuncLit:
+	// 	result = NewFuncFromType(file, typed.Type, name)
+	// case *ast.BinaryExpr:
+	// 	result = NewType(file, name, &typed.X, tag)
+	// case *ast.BasicLit:
+	// 	result = NewBasicFromBasicLit(file, name, typed, tag)
+	default:
+		panic(typed)
+	}
+
+	return result
 }

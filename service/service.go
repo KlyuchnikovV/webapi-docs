@@ -9,11 +9,12 @@ import (
 
 	"github.com/KlyuchnikovV/webapi-docs/cache"
 	"github.com/KlyuchnikovV/webapi-docs/constants"
+	"github.com/KlyuchnikovV/webapi-docs/pkg"
 	"github.com/KlyuchnikovV/webapi-docs/types"
 )
 
 type Service struct {
-	pkg types.Package
+	pkg pkg.Package
 
 	receiver types.Type
 
@@ -23,7 +24,7 @@ type Service struct {
 	Paths      map[string]map[string]types.Route
 }
 
-func New(pkg types.Package, receiver types.Type, prefix string) *Service {
+func New(pkg pkg.Package, receiver types.Type, prefix string) *Service {
 	return &Service{
 		pkg:           pkg,
 		receiver:      receiver,

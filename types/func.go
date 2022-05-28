@@ -7,49 +7,63 @@ import (
 type FuncType struct {
 	*typeBase
 
+	Receiver   Type
 	Parameters []Type
-	Results    []Type
+	Results    []ReturnStatement
 	Statements []interface{}
 
+	// Base AST variables
 	Body []ast.Stmt
 	decl *ast.FuncType
 }
 
-func NewFunc(file *ast.File, decl *ast.FuncType, name string, body []ast.Stmt, tag *ast.BasicLit) FuncType {
+func NewFunc(file *ast.File, decl ast.FuncDecl, name string, tag *ast.BasicLit) FuncType {
 	var result = FuncType{
 		typeBase: newTypeBase(file, name, tag),
 
 		Parameters: make([]Type, 0),
-		Results:    make([]Type, 0),
-		decl:       decl,
-		Body:       body,
+		Results:    make([]ReturnStatement, 0),
+
+		decl: decl.Type,
+		Body: decl.Body.List,
 	}
 
-	if decl.Params != nil {
-		for _, param := range decl.Params.List {
+	if decl.Type.Params != nil {
+		for _, param := range decl.Type.Params.List {
 			_, t := NewTypeFromField(file, param)
 			result.Parameters = append(result.Parameters, t)
 		}
 	}
 
-	if decl.Results != nil {
-		for _, param := range decl.Results.List {
+	if decl.Type.Results != nil {
+		for _, param := range decl.Type.Results.List {
 			_, t := NewTypeFromField(file, param)
-			result.Results = append(result.Results, t)
+
+			result.Results = append(result.Results, ReturnStatement{
+				Type: t,
+			})
 		}
 	}
 
-	// for _, stmt := range body {
-	// 	switch typed := stmt.(type) {
-	// 	case *ast.ReturnStmt:
-	// 		r := NewReturn(file, *typed)
-	// 		bytes, _ := json.Marshal(r)
-
-	// 		fmt.Printf("stmt: %s\n", string(bytes))
-	// 	}
-	// }
+	for _, stmt := range decl.Body.List {
+		switch typed := stmt.(type) {
+		case *ast.ReturnStmt:
+			for i, r := range typed.Results {
+				result.Results[i] = NewValue(r, result.Results[i].Type)
+			}
+		}
+	}
 
 	return result
+}
+
+func NewFuncFromType(file *ast.File, ft *ast.FuncType, name string) FuncType {
+	return NewFunc(file, ast.FuncDecl{
+		Type: ft,
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{},
+		},
+	}, name, nil)
 }
 
 func NewMethodFromField(file *ast.File, field *ast.Field) (string, *FuncType) {
@@ -63,7 +77,7 @@ func NewMethodFromField(file *ast.File, field *ast.Field) (string, *FuncType) {
 		return name, nil
 	}
 
-	var t = NewFunc(file, ft, name, nil, nil)
+	var t = NewFuncFromType(file, ft, name)
 	if name == "" {
 		name = t.Name()
 	}
@@ -72,12 +86,20 @@ func NewMethodFromField(file *ast.File, field *ast.Field) (string, *FuncType) {
 }
 
 func NewFuncDeclaration(name string, params []Type, results []Type) FuncType {
+	var returns = make([]ReturnStatement, len(results))
+
+	for i := range results {
+		returns[i] = ReturnStatement{
+			Type: results[i],
+		}
+	}
+
 	return FuncType{
 		typeBase: &typeBase{
 			name: name,
 		},
 		Parameters: params,
-		Results:    results,
+		Results:    returns,
 	}
 }
 
@@ -119,4 +141,10 @@ func (f FuncType) EqualTo(t Type) bool {
 	}
 
 	return f.typeBase.EqualTo(fun)
+}
+
+type ReturnStatement struct {
+	Type
+
+	Value interface{}
 }

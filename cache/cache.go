@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/KlyuchnikovV/webapi-docs/pkg"
 	"github.com/KlyuchnikovV/webapi-docs/types"
 )
 
@@ -19,13 +20,13 @@ type cache struct {
 	gopath    string
 	localPath string
 
-	newPackages map[string]types.Package
+	newPackages map[string]pkg.Package
 }
 
-func Init(gopath, localPath string, path string) {
+func Init(gopath, localPath, path string) error {
 	packages, err := ParseDirectory(path, localPath)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	innerCache = &cache{
@@ -33,13 +34,15 @@ func Init(gopath, localPath string, path string) {
 		localPath:   localPath,
 		newPackages: packages,
 	}
+
+	return nil
 }
 
-func GetPackages() map[string]types.Package {
+func GetPackages() map[string]pkg.Package {
 	return innerCache.newPackages
 }
 
-func GetNewPackage(pkg string) types.Package {
+func GetNewPackage(pkg string) pkg.Package {
 	return innerCache.newPackages[pkg]
 }
 
@@ -55,7 +58,7 @@ func ParsePackage(path string) error {
 		return nil
 	}
 
-	for name, pkg := range pkgs {
+	for name, pak := range pkgs {
 		var (
 			index   = strings.Index(name, "/")
 			newPath = path
@@ -65,7 +68,7 @@ func ParsePackage(path string) error {
 			newPath = fmt.Sprintf("%s/%s", path, name[index+1:])
 		}
 
-		innerCache.newPackages[newPath] = types.NewPackage(*pkg)
+		innerCache.newPackages[newPath] = pkg.NewPackage(*pak)
 	}
 
 	return nil
@@ -136,14 +139,14 @@ func FindModel(selector ast.SelectorExpr) types.Type {
 	return pkg.Types[selector.Sel.Name]
 }
 
-func FindMethod2(selector ast.SelectorExpr) types.FuncType {
+func FindMethod(selector ast.SelectorExpr) types.FuncType {
 	var model types.Type
 
 	switch typed := selector.X.(type) {
 	case *ast.SelectorExpr:
 		model = FindModel(*typed)
 	case *ast.CallExpr:
-		return FindMethod2(*typed.Fun.(*ast.SelectorExpr))
+		return FindMethod(*typed.Fun.(*ast.SelectorExpr))
 	default:
 		panic("not ok")
 	}

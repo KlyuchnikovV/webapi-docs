@@ -4,69 +4,81 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/KlyuchnikovV/webapi-docs/parser"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
-// TODO: service prefix
-
-// TODO: body parsing
-// TODO: merge objects and types
-// TODO: move on our type definitions and cache
-// TODO: move types from cache
-// TODO: refactor parser
-// TODO: create cli
 // TODO: review error responses and add builtin packages support
 // TODO: add vendor and mod folders support
-// TODO: add privacy configurations
-// TODO: add linters mode
+
+var (
+	app = kingpin.New("wadocs", "")
+	// verbose    = app.Flag("verbose", "Verbose mode.").Short('v').Bool()
+	// privacyMode = app.Flag("privacy", "Privacy mode.").Default("none").String() // TODO.
+
+	parseCmd        = app.Command("parse", "")
+	inputParserPath = parseCmd.Arg("input", "Path to work with.").Required().String()
+	outputPath      = parseCmd.Arg("output", "Output path.").Required().String()
+
+	lintCmd = app.Command("lint", "")
+	// inputLinterPath = *lintCmd.Arg("input", "Path to work with.").Required().String()
+	// verbose    = lintCmd.Flag("level", "").Short('l').Bool()
+)
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Printf("File path must be provided\n")
+	var (
+		cmd = kingpin.MustParse(
+			app.Parse(os.Args[1:]),
+		)
+		err error
+	)
+
+	switch cmd {
+	case parseCmd.FullCommand():
+		err = parseInput()
+	case lintCmd.FullCommand():
+		err = lintInput()
+	default:
+		err = fmt.Errorf("unknown command '%s'", cmd)
+	}
+
+	if err != nil {
+		fmt.Print(err)
 		os.Exit(1)
 	}
 
-	var (
-		path                  = os.Args[1]
-		basePath, gopath, err = getBasePath(path)
-		parser                = parser.NewParser(basePath, gopath)
-	)
+	fmt.Printf("Successfully parsed '%s'", *inputParserPath)
+	os.Exit(0)
+}
 
+func parseInput() error {
+	parser, err := parser.NewParser(*inputParserPath)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	spec, err := parser.GenerateDocs(path)
+	spec, err := parser.GenerateDocs()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	bytes, err := json.MarshalIndent(spec, "", "\t")
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	fmt.Printf("%s", string(bytes))
+	output, err := os.OpenFile(*outputPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		return err
+	}
+	defer output.Close()
+
+	_, err = output.Write(bytes)
+
+	return err
 }
 
-func getBasePath(path string) (string, string, error) {
-	var (
-		gopath     = os.Getenv("GOPATH")
-		srcDirPath = filepath.Join(gopath, "src/")
-	)
-
-	if len(gopath) == 0 {
-		// TODO: disable error in private mode
-		return "", "", fmt.Errorf("GOPATH must be provided")
-	}
-
-	absolutePath, err := filepath.Abs(path)
-	if err != nil {
-		return "", "", err
-	}
-
-	return absolutePath[strings.LastIndex(absolutePath, srcDirPath)+len(srcDirPath):], gopath, nil
+func lintInput() error {
+	return fmt.Errorf("linter mode currently unsupported") // TODO:
 }

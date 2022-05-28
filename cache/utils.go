@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/KlyuchnikovV/webapi-docs/pkg"
 	"github.com/KlyuchnikovV/webapi-docs/types"
 )
 
@@ -20,36 +21,42 @@ func UnwrapImportedType(s types.ImportedType) (types.Type, error) {
 	return FindModelByName(s.Name())
 }
 
-func ParseDirectory(path, localPath string) (map[string]types.Package, error) {
+func ParseDirectory(path, localPath string) (map[string]pkg.Package, error) {
 	paths, err := getDirectoriesPaths(path)
 	if err != nil {
 		return nil, err
 	}
 
-	var packages = make(map[string]types.Package)
+	var (
+		packages = make(map[string]pkg.Package)
+		fileSet  token.FileSet
+	)
 
 	for _, path := range paths {
-		pkgs, err := parser.ParseDir(&token.FileSet{}, path, nil, parser.AllErrors)
+		pkgs, err := parser.ParseDir(&fileSet, path, nil, parser.AllErrors)
 		if err != nil {
 			return nil, err
 		}
 
-		var (
-			index       = strings.LastIndex(localPath, "/")
-			packagePath = strings.Trim(localPath[:index], "/")
-		)
+		for name, pak := range pkgs {
+			var packagePath = localPath
 
-		for _, pkg := range pkgs {
-			var newPath = fmt.Sprintf("%s/%s", packagePath, strings.Trim(path, "./"))
+			if name != "main" {
+				packagePath = fmt.Sprintf(
+					"%s/%s",
+					localPath,
+					name,
+				)
+			}
 
-			packages[newPath] = types.NewPackage(*pkg)
+			packages[packagePath] = pkg.NewPackage(*pak)
 		}
 	}
 
 	return packages, nil
 }
 
-func ParseFile(path, localPath string) (map[string]types.Package, error) {
+func ParseFile(path, localPath string) (map[string]pkg.Package, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -74,8 +81,8 @@ func ParseFile(path, localPath string) (map[string]types.Package, error) {
 		return nil, err
 	}
 
-	return map[string]types.Package{
-		"": types.NewPackage(ast.Package{
+	return map[string]pkg.Package{
+		"": pkg.NewPackage(ast.Package{
 			Files: map[string]*ast.File{"": astFile},
 		}),
 	}, nil

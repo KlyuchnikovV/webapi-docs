@@ -57,7 +57,7 @@ func NewFromObject(file *ast.File, name string, obj *ast.Object, tag *ast.BasicL
 	case *ast.Field:
 		return NewType(file, name, &typed.Type, tag)
 	case *ast.FuncDecl:
-		return NewFunc(file, typed.Type, name, typed.Body.List, tag)
+		return NewFunc(file, *typed, name, tag)
 	default:
 		panic("not ok")
 	}

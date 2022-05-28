@@ -1,16 +1,18 @@
-package types
+package pkg
 
 import (
 	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
+
+	"github.com/KlyuchnikovV/webapi-docs/types"
 )
 
 type Package struct {
 	Name      string
-	Types     map[string]Type
-	Functions map[string]FuncType
+	Types     map[string]types.Type
+	Functions map[string]types.FuncType
 
 	Pkg ast.Package
 }
@@ -19,8 +21,8 @@ func NewPackage(pkg ast.Package) Package {
 	var result = Package{
 		Pkg:       pkg,
 		Name:      pkg.Name,
-		Types:     make(map[string]Type),
-		Functions: make(map[string]FuncType),
+		Types:     make(map[string]types.Type),
+		Functions: make(map[string]types.FuncType),
 	}
 
 	for name, file := range pkg.Files {
@@ -55,12 +57,12 @@ func NewPackage(pkg ast.Package) Package {
 	return result
 }
 
-func newFromGenDecl(file *ast.File, decl *ast.GenDecl) []Type {
+func newFromGenDecl(file *ast.File, decl *ast.GenDecl) []types.Type {
 	if decl.Tok != token.TYPE {
 		return nil
 	}
 
-	var result = make([]Type, len(decl.Specs))
+	var result = make([]types.Type, len(decl.Specs))
 
 	for i, spec := range decl.Specs {
 		ts, ok := spec.(*ast.TypeSpec)
@@ -68,22 +70,23 @@ func newFromGenDecl(file *ast.File, decl *ast.GenDecl) []Type {
 			panic("not ts")
 		}
 
-		result[i] = NewType(file, ts.Name.Name, &ts.Type, nil)
+		result[i] = types.NewType(file, ts.Name.Name, &ts.Type, nil)
 	}
 
 	return result
 }
 
-func (pkg *Package) newFromFuncDecl(file *ast.File, decl *ast.FuncDecl) (*FuncType, Type, error) {
+func (pkg *Package) newFromFuncDecl(file *ast.File, decl *ast.FuncDecl) (*types.FuncType, types.Type, error) {
 	var (
-		fun      = NewFunc(file, decl.Type, decl.Name.Name, decl.Body.List, nil)
-		receiver Type
+		fun      = types.NewFunc(file, *decl, decl.Name.Name, nil)
+		receiver types.Type
 	)
 
 	if decl.Recv == nil || len(decl.Recv.List) == 0 {
 		return &fun, receiver, nil
 	}
 
+	// TODO: what if type do not exist yet
 	var model = pkg.Types[receiverTypeName(decl.Recv.List[0].Type)]
 
 	if model == nil {
@@ -104,12 +107,12 @@ func receiverTypeName(f ast.Expr) string {
 	}
 }
 
-func (pkg *Package) isConstructorOf(fun FuncType) (Type, bool) {
-	if !strings.HasPrefix(fun.name, "New") {
+func (pkg *Package) isConstructorOf(fun types.FuncType) (types.Type, bool) {
+	if !strings.HasPrefix(fun.Name(), "New") {
 		return nil, false
 	}
 
-	t, ok := pkg.Types[strings.TrimPrefix(fun.name, "New")]
+	t, ok := pkg.Types[strings.TrimPrefix(fun.Name(), "New")]
 	if !ok {
 		return nil, false
 	}
