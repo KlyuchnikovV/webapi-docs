@@ -1,77 +1,34 @@
 package types
 
 import (
+	"fmt"
 	"go/ast"
-
-	"github.com/KlyuchnikovV/webapi-docs/utils"
 )
 
 type ImportedType struct {
-	*typeBase
-
+	Name    string
 	Package string
-	ts      *ast.SelectorExpr
-	imp     *ast.ImportSpec
+
+	selectorType *ast.SelectorExpr
+	// imp          *ast.ImportSpec
+	file *ast.File
 }
 
-func NewImported(file *ast.File, selector *ast.SelectorExpr, tag *ast.BasicLit) *ImportedType {
-	var name = getBaseTypeAlias(selector, 0)
-
-	var path, imp = utils.FindImport(*file, name)
+func NewImported(spec *ast.SelectorExpr, file *ast.File) (*ImportedType, error) {
+	ident, ok := spec.X.(*ast.Ident)
+	if !ok {
+		return nil, fmt.Errorf("not ident")
+	}
 
 	return &ImportedType{
-		typeBase: newTypeBase(file, selector.Sel.Name, tag),
+		Name:    spec.Sel.Name,
+		Package: ident.Name,
 
-		Package: path,
-		imp:     imp,
-
-		ts: selector,
-	}
+		selectorType: spec,
+		file:         file,
+	}, nil
 }
 
-func NewSimpleImported(name, path string) ImportedType {
-	return ImportedType{
-		typeBase: &typeBase{
-			name: name,
-		},
-		Package: path,
-	}
-}
-
-func (i ImportedType) AddMethod(FuncType) {}
-
-func (i ImportedType) Field(name string) Type {
-	return i.Field(name)
-}
-
-func (i ImportedType) Method(name string) *FuncType {
-	var field = i.fields[name]
-
-	if fun, ok := field.(FuncType); ok {
-		return &fun
-	}
-
-	return nil
-}
-
-func (i ImportedType) Fields() map[string]Type {
-	// TODO:
-	return nil
-}
-
-func (i ImportedType) Schema() Schema {
-	return nil
-}
-
-func (i ImportedType) EqualTo(t Type) bool {
-	it, ok := t.(ImportedType)
-	if !ok {
-		return false
-	}
-
-	if i.Package != it.Package {
-		return false
-	}
-
-	return i.typeBase.EqualTo(it)
+func (i ImportedType) GetName() string {
+	return i.Name
 }

@@ -4,68 +4,43 @@ import (
 	"go/ast"
 )
 
-type ArrayType struct {
-	*typeBase
+type Array struct {
+	Name string `json:"name,omitempty"`
+	Type `json:"type,omitempty"`
 
-	ItemType  Type
-	ArrayType *ast.ArrayType
+	arrayType *ast.ArrayType
+	file      *ast.File
 }
 
-func NewArray(file *ast.File, name string, array *ast.ArrayType, innerType *ast.Expr, tag *ast.BasicLit) ArrayType {
-	return ArrayType{
-		typeBase:  newTypeBase(file, name, tag),
-		ItemType:  NewType(file, "", innerType, nil),
-		ArrayType: array,
-	}
-}
-
-func NewSimpleArrayType(name string, itemType Type) ArrayType {
-	return ArrayType{
-		typeBase: &typeBase{
-			name: name,
-		},
-		ItemType: itemType,
-	}
-}
-
-func (a ArrayType) EqualTo(t Type) bool {
-	array, ok := t.(ArrayType)
-	if !ok {
-		return false
+func NewArray(name string, spec *ast.ArrayType, file *ast.File) (*Array, error) {
+	// TODO: check empty type's name
+	t, err := TypeFromExpr("", spec.Elt, file)
+	if err != nil {
+		return nil, err
 	}
 
-	if a.ItemType != array.ItemType {
-		return false
+	if name == "" {
+		name = "array"
 	}
 
-	return a.typeBase.EqualTo(array)
+	return &Array{
+		Name: name,
+		Type: t,
+
+		arrayType: spec,
+		file:      file,
+	}, nil
 }
 
-type ArraySchema struct {
-	Type  string `json:"type"`
-	Items Schema `json:"items"`
+func (a Array) GetName() string {
+	return a.Name
 }
 
-func (a ArraySchema) EqualTo(s Schema) bool {
-	as, ok := s.(ArraySchema)
-	if !ok {
-		return false
-	}
+// func (a Array) MarshalJSON() ([]byte, error) {
+// 	return json.Marshal(struct{
+// 		Name string
 
-	if a.Type != as.Type {
-		return false
-	}
+// 	}{
 
-	return a.Items.EqualTo(as.Items)
-}
-
-func (a ArraySchema) SchemaType() string {
-	return a.Type
-}
-
-func (a ArrayType) Schema() Schema {
-	return &ArraySchema{
-		Type:  "array",
-		Items: a.ItemType.Schema(),
-	}
-}
+// 	})
+// }

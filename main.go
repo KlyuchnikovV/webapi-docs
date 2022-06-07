@@ -36,9 +36,21 @@ func main() {
 
 	switch cmd {
 	case parseCmd.FullCommand():
-		err = parseInput()
+		p, _, err := parser.Parse(*inputParserPath)
+		if err != nil {
+			panic(err)
+		}
+
+		bytes, err := json.MarshalIndent(p, "", "\t")
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println(string(bytes))
+
+		// err = parseInput()
 	case lintCmd.FullCommand():
-		err = lintInput()
+		// err = lintInput()
 	default:
 		err = fmt.Errorf("unknown command '%s'", cmd)
 	}
@@ -52,6 +64,7 @@ func main() {
 	os.Exit(0)
 }
 
+/*
 func parseInput() error {
 	parser, err := parser.NewParser(*inputParserPath)
 	if err != nil {
@@ -82,3 +95,4 @@ func parseInput() error {
 func lintInput() error {
 	return fmt.Errorf("linter mode currently unsupported") // TODO:
 }
+*/
