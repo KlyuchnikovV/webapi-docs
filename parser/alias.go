@@ -1,4 +1,4 @@
-package types
+package parser
 
 import (
 	"go/ast"
@@ -9,7 +9,7 @@ type Alias struct {
 	Type Type   `json:"type,omitempty"`
 
 	identType *ast.Ident `json:"-"`
-	file      *ast.File  `json:"-"`
+	File      *ast.File  `json:"-"`
 }
 
 func NewAlias(spec *ast.Ident, file *ast.File) (Type, error) {
@@ -29,10 +29,19 @@ func NewAlias(spec *ast.Ident, file *ast.File) (Type, error) {
 		Type: t,
 
 		identType: spec,
-		file:      file,
+		File:      file,
 	}, nil
 }
 
-func (s Alias) GetName() string {
-	return s.Name
+func (a Alias) GetName() string {
+	return a.Name
+}
+
+func (a Alias) EqualTo(t Type) bool {
+	typed, ok := t.(*Alias)
+	if !ok {
+		return false
+	}
+
+	return a.Name == typed.Name && a.Type.EqualTo(typed.Type)
 }

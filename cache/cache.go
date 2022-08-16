@@ -1,23 +1,25 @@
-package parser
+package cache
 
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
+	goParser "go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/KlyuchnikovV/webapi-docs/parser"
 )
 
-var Pkgs Packages
+var packages Packages
 
 type (
 	Package struct {
 		Name      string
-		Types     map[string]Type
-		Functions map[string]*FuncDecl
-		Variables map[string]*Variable
+		Types     map[string]parser.Type
+		Functions map[string]*parser.FuncDecl
+		Variables map[string]*parser.Variable
 
 		Pkg ast.Package `json:"-"`
 	}
@@ -26,15 +28,11 @@ type (
 )
 
 func NewPackage(pkg ast.Package) (*Package, error) {
-	if len(Pkgs) == 0 {
-		Pkgs = make(Packages)
-	}
-
-	Pkgs[pkg.Name] = &Package{
-		Name:      pkg.Name,
-		Types:     make(map[string]Type),
-		Functions: make(map[string]*FuncDecl),
-		Variables: make(map[string]*Variable),
+	var result = Package{
+		Name: pkg.Name,
+		// Types:     make(map[string]Type),
+		// Functions: make(map[string]*FuncDecl),
+		// Variables: make(map[string]*Variable),
 
 		Pkg: pkg,
 	}
@@ -50,7 +48,7 @@ func NewPackage(pkg ast.Package) (*Package, error) {
 						break
 					}
 
-					t, err := NewType(*typeSpec, file)
+					t, err := parser.NewType(*typeSpec, file)
 					if err != nil {
 						return nil, err
 					}
@@ -59,22 +57,28 @@ func NewPackage(pkg ast.Package) (*Package, error) {
 						continue
 					}
 
-					Pkgs[pkg.Name].Types[t.GetName()] = t
+					result.Types[t.GetName()] = t
 				}
 			case *ast.FuncDecl:
-				decl, err := NewFuncDecl(typed.Name.Name, typed, file)
+				decl, err := parser.NewFuncDecl(typed.Name.Name, typed, file, result)
 				if err != nil {
 					return nil, err
 				}
 
-				Pkgs[pkg.Name].Functions[typed.Name.Name] = decl
+				result.Functions[typed.Name.Name] = decl
 			default:
 				return nil, fmt.Errorf("%s - %#v", name, typed)
 			}
 		}
 	}
 
-	return Pkgs[pkg.Name], nil
+	if len(packages) == 0 {
+		packages = make(Packages)
+	}
+
+	packages[result.Name] = &result
+
+	return &result, nil
 }
 
 func Parse(path string) (Packages, *token.FileSet, error) {
@@ -99,21 +103,11 @@ func Parse(path string) (Packages, *token.FileSet, error) {
 		err = parseDir(path, srcBasedPath, pkgs, fset)
 	}
 
-	if len(Pkgs) == 0 {
-		Pkgs = make(Packages)
-	}
-
-	for name, pkg := range pkgs {
-		if _, ok := Pkgs[name]; !ok {
-			Pkgs[name] = pkg
-		}
-	}
-
 	return pkgs, fset, err
 }
 
 func parseDir(path, srcBasedPath string, pkgs Packages, fset *token.FileSet) error {
-	astPackages, err := parser.ParseDir(fset, path, nil, parser.AllErrors)
+	astPackages, err := goParser.ParseDir(fset, path, nil, goParser.AllErrors)
 	if err != nil {
 		return err
 	}
@@ -151,7 +145,7 @@ func parseDir(path, srcBasedPath string, pkgs Packages, fset *token.FileSet) err
 }
 
 func parseFile(path, srcBasedPath string, pkgs Packages, fset *token.FileSet) error {
-	astFile, err := parser.ParseFile(fset, path, nil, parser.AllErrors)
+	astFile, err := goParser.ParseFile(fset, path, nil, goParser.AllErrors)
 	if err != nil {
 		return err
 	}
@@ -174,7 +168,7 @@ func parseFile(path, srcBasedPath string, pkgs Packages, fset *token.FileSet) er
 	return nil
 }
 
-func (pkgs *Packages) FindType(pkgPath, name string) (Type, error) {
+func (pkgs *Packages) FindType(pkgPath, name string) (parser.Type, error) {
 	pkg, ok := (*pkgs)[pkgPath]
 	if ok {
 		return pkg.FindType(name), nil
@@ -192,7 +186,7 @@ func (pkgs *Packages) FindType(pkgPath, name string) (Type, error) {
 	return pkgs.FindType(pkgPath, name)
 }
 
-func (pkg *Package) FindType(name string) Type {
+func (pkg *Package) FindType(name string) parser.Type {
 	t, ok := pkg.Types[name]
 	if ok {
 		return t

@@ -28,27 +28,13 @@ var (
 
 func main() {
 	var (
-		cmd = kingpin.MustParse(
-			app.Parse(os.Args[1:]),
-		)
+		cmd = kingpin.MustParse(app.Parse(os.Args[1:]))
 		err error
 	)
 
 	switch cmd {
 	case parseCmd.FullCommand():
-		p, _, err := parser.Parse(*inputParserPath)
-		if err != nil {
-			panic(err)
-		}
-
-		bytes, err := json.MarshalIndent(p, "", "\t")
-		if err != nil {
-			panic(err)
-		}
-
-		fmt.Println(string(bytes))
-
-		// err = parseInput()
+		err = parseInput(*inputParserPath, *outputPath)
 	case lintCmd.FullCommand():
 		// err = lintInput()
 	default:
@@ -64,34 +50,34 @@ func main() {
 	os.Exit(0)
 }
 
-/*
-func parseInput() error {
-	parser, err := parser.NewParser(*inputParserPath)
+func parseInput(input, output string) error {
+	_, _, err := parser.Parse(input)
 	if err != nil {
 		return err
 	}
 
-	spec, err := parser.GenerateDocs()
+	docs, err := generateDocumentation()
 	if err != nil {
 		return err
 	}
 
-	bytes, err := json.MarshalIndent(spec, "", "\t")
+	bytes, err := json.MarshalIndent(docs, "", "\t")
 	if err != nil {
 		return err
 	}
 
-	output, err := os.OpenFile(*outputPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+	outFile, err := os.OpenFile(output, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 	if err != nil {
 		return err
 	}
-	defer output.Close()
+	defer outFile.Close()
 
-	_, err = output.Write(bytes)
+	_, err = outFile.Write(bytes)
 
 	return err
 }
 
+/*
 func lintInput() error {
 	return fmt.Errorf("linter mode currently unsupported") // TODO:
 }

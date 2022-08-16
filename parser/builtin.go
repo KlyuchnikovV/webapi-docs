@@ -1,4 +1,4 @@
-package types
+package parser
 
 import "encoding/json"
 
@@ -10,6 +10,15 @@ func NewBuiltIn(name string) BuiltIn {
 
 func (b BuiltIn) GetName() string {
 	return string(b)
+}
+
+func (b BuiltIn) EqualTo(t Type) bool {
+	typed, ok := t.(*BuiltIn)
+	if !ok {
+		return false
+	}
+
+	return b == *typed
 }
 
 func (b BuiltIn) MarshalJSON() ([]byte, error) {
