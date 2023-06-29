@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"go/ast"
 )
 
@@ -17,7 +18,7 @@ type FuncType struct {
 
 func NewFunc(file *ast.File, decl *ast.FuncType, name string, body []ast.Stmt, tag *ast.BasicLit) FuncType {
 	var result = FuncType{
-		typeBase: newTypeBase(file, name, tag),
+		typeBase: newTypeBase(file, name, tag, EmptySchemaType),
 
 		Parameters: make([]Type, 0),
 		Results:    make([]Type, 0),
@@ -39,15 +40,7 @@ func NewFunc(file *ast.File, decl *ast.FuncType, name string, body []ast.Stmt, t
 		}
 	}
 
-	// for _, stmt := range body {
-	// 	switch typed := stmt.(type) {
-	// 	case *ast.ReturnStmt:
-	// 		r := NewReturn(file, *typed)
-	// 		bytes, _ := json.Marshal(r)
-
-	// 		fmt.Printf("stmt: %s\n", string(bytes))
-	// 	}
-	// }
+	result.ReturnStatements2()
 
 	return result
 }
@@ -118,5 +111,88 @@ func (f FuncType) EqualTo(t Type) bool {
 		}
 	}
 
-	return f.typeBase.EqualTo(fun)
+	return f.typeBase.EqualTo(fun.typeBase)
+}
+
+func (f FuncType) Implements(it InterfaceType) bool {
+	if len(it.fields) > 1 {
+		return false
+	}
+
+	method, ok := it.fields[f.name].(FuncType)
+	if !ok {
+		return false
+	}
+
+	return f.typeBase.EqualTo(method.typeBase)
+}
+
+func (f FuncType) ReturnStatements2() []ReturnStatement {
+	var returns = make([]ReturnStatement, 0)
+
+	for _, stmt := range f.Body {
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			ret, ok := n.(*ast.ReturnStmt)
+			if !ok {
+				return true
+			}
+
+			result := NewReturn(f.file, *ret)
+			if result == nil {
+				return true
+			}
+
+			returns = append(returns, *result)
+			return false
+		})
+	}
+
+	return returns
+}
+
+type ReturnStatement struct {
+	t Type
+}
+
+func NewReturn(file *ast.File, statements ast.ReturnStmt) *ReturnStatement {
+	if len(statements.Results) != 1 {
+		return nil // Not webapi response
+	}
+
+	var result = ReturnStatement{
+		t: NewType(file, "", &statements.Results[0], nil),
+	}
+
+	fmt.Printf("%#v - %t\n", result.t, result.t)
+
+	// switch typed := statements.Results[0].(type) {
+	// case *ast.BasicLit:
+	// 	result.t = NewBasicFromBasicLit(file, "", typed, nil)
+	// 	fmt.Printf("result is %#v - %T\n", result.t, result.t)
+	// case *ast.CompositeLit:
+	// 	result.t = NewType(file, "", &statements.Results[0], nil)
+	// 	fmt.Printf("result is %#v - %T\n", result.t, result.t)
+	// case *ast.CallExpr:
+	// 	selector, ok := typed.Fun.(*ast.SelectorExpr)
+	// 	if !ok {
+	// 		panic("wrong")
+	// 	}
+
+	// 	var imported = NewImported(file, selector, nil)
+
+	// 	if !imported.IsWebAPI() {
+	// 		break
+	// 	}
+
+	// 	fmt.Printf("func is %s, args are:\n", imported.name)
+	// 	for i, arg := range typed.Args {
+	// 		fmt.Printf("	%d - %#v\n", i, arg)
+	// 	}
+
+	// 	result.t = imported
+	// default:
+	// 	panic(fmt.Sprintf("%v - %T\n", typed, typed))
+	// }
+
+	return nil //statements.Results
 }

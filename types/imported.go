@@ -2,8 +2,6 @@ package types
 
 import (
 	"go/ast"
-
-	"github.com/KlyuchnikovV/webapi-docs/utils"
 )
 
 type ImportedType struct {
@@ -17,10 +15,17 @@ type ImportedType struct {
 func NewImported(file *ast.File, selector *ast.SelectorExpr, tag *ast.BasicLit) *ImportedType {
 	var name = getBaseTypeAlias(selector, 0)
 
-	var path, imp = utils.FindImport(*file, name)
+	var (
+		path string
+		imp  *ast.ImportSpec
+	)
+	
+	if file != nil {
+		path, imp = FindImport(*file, name)
+	}
 
 	return &ImportedType{
-		typeBase: newTypeBase(file, selector.Sel.Name, tag),
+		typeBase: newTypeBase(file, selector.Sel.Name, tag, EmptySchemaType),
 
 		Package: path,
 		imp:     imp,
@@ -41,7 +46,7 @@ func NewSimpleImported(name, path string) ImportedType {
 func (i ImportedType) AddMethod(FuncType) {}
 
 func (i ImportedType) Field(name string) Type {
-	return i.Field(name)
+	return i.typeBase.Field(name)
 }
 
 func (i ImportedType) Method(name string) *FuncType {
@@ -59,10 +64,6 @@ func (i ImportedType) Fields() map[string]Type {
 	return nil
 }
 
-func (i ImportedType) Schema() Schema {
-	return nil
-}
-
 func (i ImportedType) EqualTo(t Type) bool {
 	it, ok := t.(ImportedType)
 	if !ok {
@@ -73,5 +74,9 @@ func (i ImportedType) EqualTo(t Type) bool {
 		return false
 	}
 
-	return i.typeBase.EqualTo(it)
+	return i.typeBase.EqualTo(it.typeBase)
+}
+
+func (i ImportedType) IsWebAPI() bool {
+	return i.Package == "github.com/KlyuchnikovV/webapi"
 }

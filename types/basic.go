@@ -1,10 +1,9 @@
 package types
 
 import (
+	"encoding/json"
 	"fmt"
 	"go/ast"
-
-	"github.com/KlyuchnikovV/webapi-docs/utils"
 )
 
 type BasicType struct {
@@ -12,6 +11,24 @@ type BasicType struct {
 
 	BasicType string
 	Ident     *ast.Ident
+
+	Format string `json:"format,omitempty"`
+}
+
+func (o BasicType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Type        SchemaType `json:"type"`
+		Description string     `json:"description,omitempty"`
+		Example     string     `json:"example,omitempty"`
+		Required    bool       `json:"required,omitempty"`
+		Format      string     `json:"format,omitempty"`
+	}{
+		Type:        o.Type,
+		Description: o.Description,
+		Example:     o.Example,
+		Required:    o.Required,
+		Format:      o.Format,
+	})
 }
 
 func NewBasic(file *ast.File, name string, ident *ast.Ident, tag *ast.BasicLit) Type {
@@ -20,10 +37,11 @@ func NewBasic(file *ast.File, name string, ident *ast.Ident, tag *ast.BasicLit) 
 	}
 
 	return BasicType{
-		typeBase:  newTypeBase(file, name, tag),
+		typeBase:  newTypeBase(file, name, tag, ConvertFieldType(name)),
 		BasicType: ident.Name,
 
-		Ident: ident,
+		Ident:  ident,
+		Format: GetFieldTypeFormat(name),
 	}
 }
 
@@ -71,61 +89,37 @@ func NewBasicFromBasicLit(file *ast.File, name string, basic, tag *ast.BasicLit)
 	}
 
 	return BasicType{
-		typeBase:  newTypeBase(file, name, tag),
+		typeBase:  newTypeBase(file, name, tag, ConvertFieldType(name)),
 		BasicType: basic.Value,
 	}
 }
 
-func NewSimpleBasicType(name string) BasicType {
+func NewSimpleBasicType(name SchemaType) BasicType {
 	return BasicType{
 		typeBase: &typeBase{
-			name: name,
+			name: string(name),
+			Type: name,
 		},
 
-		BasicType: name,
+		BasicType: string(name),
 	}
 }
 
-func (b BasicType) EqualTo(t Type) bool {
+func (o BasicType) EqualTo(t Type) bool {
 	basic, ok := t.(BasicType)
 	if !ok {
 		return false
 	}
 
-	if b.BasicType != basic.BasicType {
+	if o.BasicType != basic.BasicType {
 		return false
 	}
 
-	return b.typeBase.EqualTo(basic)
-}
-
-func (b BasicType) Schema() Schema {
-	return FieldSchema{
-		Type:   utils.ConvertFieldType(b.name),
-		Format: utils.GetFieldTypeFormat(b.name),
-	}
-}
-
-type FieldSchema struct {
-	Type   string `json:"type"`
-	Format string `json:"format,omitempty"`
-}
-
-func (f FieldSchema) EqualTo(s Schema) bool {
-	fs, ok := s.(FieldSchema)
-	if !ok {
+	if o.Format != basic.Format {
 		return false
 	}
 
-	if f.Type != fs.Type {
-		return false
-	}
-
-	return f.Format == fs.Format
-}
-
-func (f FieldSchema) SchemaType() string {
-	return f.Type
+	return o.typeBase.EqualTo(basic.typeBase)
 }
 
 type Reference struct {
@@ -167,7 +161,7 @@ type StringType struct {
 
 func NewString(basic *ast.BasicLit) StringType {
 	return StringType{
-		typeBase: newTypeBase(nil, "", nil),
+		typeBase: newTypeBase(nil, "", nil, StringSchemaType),
 		Data:     basic.Value,
 
 		Basic: basic,
@@ -178,33 +172,15 @@ func (s StringType) Name() string {
 	return "string"
 }
 
-func (s StringType) Schema() Schema {
-	return StringSchema{
-		Type: "string",
-	}
-}
-
-type StringSchema struct {
-	Type string `json:"type"`
-}
-
-func (s StringSchema) EqualTo(sh Schema) bool {
-	rf, ok := sh.(StringSchema)
+func (s StringType) EqualTo(sch Type) bool {
+	rf, ok := sch.(StringType)
 	if !ok {
 		return false
 	}
 
-	return s == rf
+	if rf.Data != s.Data {
+		return false
+	}
+
+	return s.typeBase.EqualTo(rf.typeBase)
 }
-
-func (s StringSchema) SchemaType() string {
-	return "string"
-}
-
-// func (r StringSchema) NameParam() string {
-// 	return ""
-// }
-
-// func (StringSchema) Type() string {
-// 	return "string"
-// }

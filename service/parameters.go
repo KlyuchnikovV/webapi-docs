@@ -5,9 +5,7 @@ import (
 	"go/ast"
 	"strings"
 
-	"github.com/KlyuchnikovV/webapi-docs/cache"
 	"github.com/KlyuchnikovV/webapi-docs/types"
-	"github.com/KlyuchnikovV/webapi-docs/utils"
 )
 
 func (srv *Service) ParseParameter(route *types.Route, argument ast.CallExpr) error {
@@ -31,6 +29,17 @@ func (srv *Service) ParseParameter(route *types.Route, argument ast.CallExpr) er
 		srv.Components.RequestBodies[name] = types.NewRequestBody(*types.NewReference(name, "schemas"))
 
 		route.RequestBody = types.NewReference(name, "requestBodies")
+	case "Description":
+		if len(argument.Args) < 1 {
+			return fmt.Errorf("route 'Description' has no argument")
+		}
+
+		description, ok := argument.Args[0].(*ast.BasicLit)
+		if !ok {
+			return fmt.Errorf("route 'Description' isn't string")
+		}
+
+		route.Description = strings.Trim(description.Value, `"`)
 	default:
 		var (
 			prefix string
@@ -51,7 +60,7 @@ func (srv *Service) ParseParameter(route *types.Route, argument ast.CallExpr) er
 	return nil
 }
 
-func (srv *Service) NewInBody(route *types.Route, arg ast.Expr) (string, types.Schema) {
+func (srv *Service) NewInBody(route *types.Route, arg ast.Expr) (string, types.Type) {
 	var selector ast.SelectorExpr
 
 	ast.Inspect(arg, func(n ast.Node) bool {
@@ -62,15 +71,15 @@ func (srv *Service) NewInBody(route *types.Route, arg ast.Expr) (string, types.S
 		return true
 	})
 
-	_, imp := utils.FindImport(*srv.receiver.File(), selector.X.(*ast.Ident).Name)
+	_, imp := types.FindImport(*srv.receiver.File(), selector.X.(*ast.Ident).Name)
 	selector.X.(*ast.Ident).Name = strings.Trim(imp.Path.Value, "\"")
 
-	model := cache.FindModel(selector)
+	model := srv.parser.FindModel(selector)
 	if model == nil {
 		return "", nil
 	}
 
-	return model.Name(), model.Schema()
+	return model.Name(), model
 }
 
 func (srv *Service) AddParameter(route *types.Route, param types.IParameter) {
