@@ -37,20 +37,22 @@ type (
 	}
 )
 
-func NewParameter(paramType string, t string, args []ast.Expr) Parameter {
+// func NewParameter(paramType string, t string, args []ast.Expr) Parameter {
+func NewParameter(paramType string, t types.Call) Parameter {
 	var parameter = Parameter{
 		In:       paramType,
 		Required: true,
 		Schema: types.NewSimpleBasicType(
-			types.ConvertFieldType(constants.TypeParamsMap[t]),
+			types.ConvertFieldType(constants.TypeParamsMap[t.Call.Name()]),
 		),
+		Description: t.Call.GetDescription(),
 		//  types.ObjectSchema{
 		// 	// TODO: nil as tags?
 		// 	BaseSchema: types.NewSchema(types.ConvertFieldType(constants.TypeParamsMap[t]), nil),
 		// },
 	}
 
-	for _, arg := range args {
+	for _, arg := range t.Decl().Args {
 		switch argument := arg.(type) {
 		case *ast.BasicLit:
 			if parameter.Name == "" {

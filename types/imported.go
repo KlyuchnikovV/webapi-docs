@@ -12,19 +12,19 @@ type ImportedType struct {
 	imp     *ast.ImportSpec
 }
 
-func NewImported(file *ast.File, selector *ast.SelectorExpr, tag *ast.BasicLit) *ImportedType {
+func NewImported(file *ast.File, selector *ast.SelectorExpr, tag *ast.BasicLit) ImportedType {
 	var name = getBaseTypeAlias(selector, 0)
 
 	var (
 		path string
 		imp  *ast.ImportSpec
 	)
-	
+
 	if file != nil {
 		path, imp = FindImport(*file, name)
 	}
 
-	return &ImportedType{
+	return ImportedType{
 		typeBase: newTypeBase(file, selector.Sel.Name, tag, EmptySchemaType),
 
 		Package: path,
@@ -79,4 +79,15 @@ func (i ImportedType) EqualTo(t Type) bool {
 
 func (i ImportedType) IsWebAPI() bool {
 	return i.Package == "github.com/KlyuchnikovV/webapi"
+}
+
+func (i ImportedType) Selector() *ast.SelectorExpr {
+	return &ast.SelectorExpr{
+		X: &ast.Ident{
+			Name: i.Package,
+		},
+		Sel: &ast.Ident{
+			Name: i.name,
+		},
+	}
 }

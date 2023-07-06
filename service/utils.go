@@ -95,8 +95,8 @@ func (srv *Service) returnTypeFromSelector(selector *ast.SelectorExpr, i int) (t
 	}
 
 	switch typed := t.(type) {
-	case *types.ImportedType:
-		t, err = srv.parser.UnwrapImportedType(*typed)
+	case types.ImportedType:
+		t, err = srv.parser.UnwrapImportedType(typed)
 		if err != nil {
 			return nil, err
 		}

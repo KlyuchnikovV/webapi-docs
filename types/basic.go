@@ -9,8 +9,8 @@ import (
 type BasicType struct {
 	*typeBase
 
-	BasicType string
-	Ident     *ast.Ident
+	Value string
+	Ident *ast.Ident
 
 	Format string `json:"format,omitempty"`
 }
@@ -37,8 +37,8 @@ func NewBasic(file *ast.File, name string, ident *ast.Ident, tag *ast.BasicLit) 
 	}
 
 	return BasicType{
-		typeBase:  newTypeBase(file, name, tag, ConvertFieldType(name)),
-		BasicType: ident.Name,
+		typeBase: newTypeBase(file, name, tag, ConvertFieldType(name)),
+		Value:    ident.Name,
 
 		Ident:  ident,
 		Format: GetFieldTypeFormat(name),
@@ -48,7 +48,7 @@ func NewBasic(file *ast.File, name string, ident *ast.Ident, tag *ast.BasicLit) 
 func NewFromObject(file *ast.File, name string, obj *ast.Object, tag *ast.BasicLit) Type {
 	switch typed := obj.Decl.(type) {
 	case *ast.TypeSpec:
-		return NewType(file, name, &typed.Type, tag)
+		return NewType(file, name, typed.Type, tag)
 	case *ast.AssignStmt:
 		for i, variable := range typed.Lhs {
 			v, ok := variable.(*ast.Ident)
@@ -61,21 +61,21 @@ func NewFromObject(file *ast.File, name string, obj *ast.Object, tag *ast.BasicL
 			}
 
 			if len(typed.Rhs) <= i {
-				return NewType(file, name, &typed.Rhs[len(typed.Rhs)-1], tag)
+				return NewType(file, name, typed.Rhs[len(typed.Rhs)-1], tag)
 			}
 
-			return NewType(file, name, &typed.Rhs[i], tag)
+			return NewType(file, name, typed.Rhs[i], tag)
 		}
 	case *ast.ValueSpec:
 		if len(typed.Values) == 0 {
-			return NewType(file, name, &typed.Type, tag)
+			return NewType(file, name, typed.Type, tag)
 		}
 
-		return NewType(file, name, &typed.Values[0], tag)
+		return NewType(file, name, typed.Values[0], tag)
 	case *ast.Field:
-		return NewType(file, name, &typed.Type, tag)
+		return NewType(file, name, typed.Type, tag)
 	case *ast.FuncDecl:
-		return NewFunc(file, typed.Type, name, typed.Body.List, tag)
+		return NewFunc(file, name, typed.Type, typed.Body.List, tag)
 	default:
 		panic("not ok")
 	}
@@ -89,8 +89,8 @@ func NewBasicFromBasicLit(file *ast.File, name string, basic, tag *ast.BasicLit)
 	}
 
 	return BasicType{
-		typeBase:  newTypeBase(file, name, tag, ConvertFieldType(name)),
-		BasicType: basic.Value,
+		typeBase: newTypeBase(file, name, tag, ConvertFieldType(name)),
+		Value:    basic.Value,
 	}
 }
 
@@ -101,7 +101,7 @@ func NewSimpleBasicType(name SchemaType) BasicType {
 			Type: name,
 		},
 
-		BasicType: string(name),
+		Value: string(name),
 	}
 }
 
@@ -111,7 +111,7 @@ func (o BasicType) EqualTo(t Type) bool {
 		return false
 	}
 
-	if o.BasicType != basic.BasicType {
+	if o.Value != basic.Value {
 		return false
 	}
 

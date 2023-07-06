@@ -154,7 +154,7 @@ func newFromGenDecl(file *ast.File, decl *ast.GenDecl) []types.Type {
 			panic("not ts")
 		}
 
-		result[i] = types.NewType(file, ts.Name.Name, &ts.Type, nil)
+		result[i] = types.NewType(file, ts.Name.Name, ts.Type, nil)
 	}
 
 	return result
@@ -162,7 +162,7 @@ func newFromGenDecl(file *ast.File, decl *ast.GenDecl) []types.Type {
 
 func newFromFuncDecl(pkg Package, file *ast.File, decl *ast.FuncDecl) (*types.FuncType, types.Type, error) {
 	var (
-		fun      = types.NewFunc(file, decl.Type, decl.Name.Name, decl.Body.List, nil)
+		fun      = types.NewFunc(file, decl.Name.Name, decl.Type, decl.Body.List, nil)
 		receiver types.Type
 	)
 

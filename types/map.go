@@ -15,8 +15,8 @@ func NewMap(file *ast.File, name string, str *ast.MapType, tag *ast.BasicLit) Ma
 	return MapType{
 		typeBase: newTypeBase(file, name, nil, EmptySchemaType),
 
-		Key:   NewType(file, "", &str.Key, nil),
-		Value: NewType(file, "", &str.Value, nil),
+		Key:   NewType(file, "", str.Key, nil),
+		Value: NewType(file, "", str.Value, nil),
 
 		ts: str,
 	}

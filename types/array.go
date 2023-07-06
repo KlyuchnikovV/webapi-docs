@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"go/ast"
 )
 
@@ -11,7 +12,7 @@ type ArrayType struct {
 	ArrayType *ast.ArrayType
 }
 
-func NewArray(file *ast.File, name string, array *ast.ArrayType, innerType *ast.Expr, tag *ast.BasicLit) ArrayType {
+func NewArray(file *ast.File, name string, array *ast.ArrayType, innerType ast.Expr, tag *ast.BasicLit) ArrayType {
 	return ArrayType{
 		typeBase:  newTypeBase(file, name, tag, ArraySchemaType),
 		ItemType:  NewType(file, "", innerType, nil),
@@ -39,4 +40,20 @@ func (a ArrayType) EqualTo(t Type) bool {
 	}
 
 	return a.typeBase.EqualTo(array.typeBase)
+}
+
+func (a ArrayType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Type        SchemaType `json:"type"`
+		Description string     `json:"description,omitempty"`
+		Example     string     `json:"example,omitempty"`
+		Required    bool       `json:"required,omitempty"`
+		Items       Type       `json:"items,omitempty"`
+	}{
+		Type:        a.Type,
+		Description: a.Description,
+		Example:     a.Example,
+		Required:    a.Required,
+		Items:       a.ItemType,
+	})
 }

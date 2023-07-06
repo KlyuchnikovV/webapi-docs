@@ -28,7 +28,7 @@ func (srv *Service) getResponses(service, method string, returns []ast.ReturnStm
 			var code int
 			// TODO: templating
 			if selExpr.Sel.Name == "JSON" {
-				var t = types.NewType(nil, "", &callExpr.Args[0], nil)
+				var t = types.NewType(nil, "", callExpr.Args[0], nil)
 				code, _ = constants.GetResultCode(strings.Trim(t.Name(), "Status"))
 			} else {
 				code, _ = constants.GetResultCode(selExpr.Sel.Name)
@@ -55,7 +55,7 @@ func (srv *Service) defineResponse(service, method, fun string, args []ast.Expr)
 	case "Created", "NoContent":
 		return srv.noContentResponse(code), nil
 	case "JSON":
-		var t = types.NewType(nil, "", &args[0], nil)
+		var t = types.NewType(nil, "", args[0], nil)
 		code, _ = constants.GetResultCode(strings.Trim(t.Name(), "Status"))
 
 		return srv.objectResponse(service, method, code, args)
@@ -85,8 +85,8 @@ func (srv *Service) objectResponse(service, method string, code int, args []ast.
 	}
 
 	switch typed := t.(type) {
-	case *types.ImportedType:
-		t, err = srv.parser.UnwrapImportedType(*typed)
+	case types.ImportedType:
+		t, err = srv.parser.UnwrapImportedType(typed)
 		if err != nil {
 			return nil, err
 		}
@@ -119,8 +119,8 @@ func (srv *Service) errorResponse(service, method string, code int, args []ast.E
 	var desc string
 
 	switch typed := t.(type) {
-	case *types.ImportedType:
-		t, err = srv.parser.UnwrapImportedType(*typed)
+	case types.ImportedType:
+		t, err = srv.parser.UnwrapImportedType(typed)
 		if err != nil {
 			return nil, err
 		}

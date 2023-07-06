@@ -1,6 +1,8 @@
 package types
 
-import "go/ast"
+import (
+	"go/ast"
+)
 
 type InterfaceType struct {
 	*typeBase
@@ -60,3 +62,6 @@ func RoutersFunc() Type {
 		},
 	)
 }
+
+type RouteOptionHanlder func(*Route, Call) error
+type ParameterOptionHandler func(Type, Call) error

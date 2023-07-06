@@ -105,39 +105,67 @@ func (parser *Parser) FindMethod(selector ast.SelectorExpr) types.FuncType {
 	return *model.Method(selector.Sel.Name)
 }
 
+func (parser *Parser) FindCall(fun types.FuncType, t types.Type) *types.Call {
+	var result *types.Call
+
+	for _, stmt := range fun.Body {
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			callExpr, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+
+			call := types.NewCall(fun.File(), "", callExpr, nil)
+			if !call.Call.EqualTo(t) {
+				return true
+			}
+
+			result = &call
+
+			return false
+		})
+
+		if result != nil {
+			return result
+		}
+	}
+
+	return nil
+}
+
 func (parser *Parser) GenerateDocs(path string) (*types.OpenAPISpec, error) {
 	var services = parser.getServices()
-	if err := parser.ParseServices(services); err != nil {
-		return nil, err
+	for prefix, model := range services {
+		if err := parser.ParseService(prefix, model); err != nil {
+			return nil, err
+		}
 	}
 
 	return parser.Spec, nil
 }
 
-func (parser *Parser) ParseServices(services map[string]types.Type) error {
-	for prefix, model := range services {
-		for _, pkg := range parser.GetPackages() {
-			if _, ok := pkg.Types[model.Name()]; !ok {
-				continue
+func (parser *Parser) ParseService(prefix string, model types.Type) error {
+	for _, pkg := range parser.GetPackages() {
+		if _, ok := pkg.Types[model.Name()]; !ok {
+			continue
+		}
+
+		var srv = service.New(parser, model, prefix)
+		if err := srv.Parse(); err != nil {
+			return err
+		}
+
+		parser.Spec.Components.Add(srv.Components)
+
+		for path, paths := range srv.Paths {
+			path = filepath.Join("/", parser.apiPrefix, path)
+
+			if _, ok := parser.Spec.Paths[path]; !ok {
+				parser.Spec.Paths[path] = make(map[string]types.Route)
 			}
 
-			var srv = service.New(parser, model, prefix)
-			if err := srv.Parse(); err != nil {
-				return err
-			}
-
-			parser.Spec.Components.Add(srv.Components)
-
-			for path, paths := range srv.Paths {
-				path = filepath.Join("/", parser.apiPrefix, path)
-
-				if _, ok := parser.Spec.Paths[path]; !ok {
-					parser.Spec.Paths[path] = make(map[string]types.Route)
-				}
-
-				for method, handler := range paths {
-					parser.Spec.Paths[path][method] = handler
-				}
+			for method, handler := range paths {
+				parser.Spec.Paths[path][method] = handler
 			}
 		}
 	}
@@ -161,12 +189,29 @@ func (parser *Parser) getServices() map[string]types.Type {
 	return services
 }
 
+func (parser *Parser) getInfo() {
+	var engineNew = types.NewSimpleImported("New", constants.WebapiPath)
+
+	for _, pkg := range parser.GetPackages() {
+		for _, fun := range pkg.Functions {
+			var call = parser.FindCall(fun, engineNew)
+			if call == nil {
+				continue
+			}
+
+			// call.Parameters[0]
+		}
+	}
+}
+
 // TODO: replace
 func (parser *Parser) getEngineInfo(fun types.FuncType) {
 	var (
-		file       = fun.File()
-		engineNew  = types.NewSimpleImported("New", constants.WebapiPath)
-		withPrefix = types.NewSimpleImported("WithPrefix", constants.WebapiPath)
+		file           = fun.File()
+		engineNew      = types.NewSimpleImported("New", constants.WebapiPath)
+		withPrefix     = types.NewSimpleImported("WithPrefix", constants.WebapiPath)
+		responseAsJSON = types.NewSimpleImported("ResponseAsJSON", constants.WebapiPath)
+		responseAsXML  = types.NewSimpleImported("ResponseAsXML", constants.WebapiPath)
 	)
 
 	for _, stmt := range fun.Body {
@@ -182,23 +227,32 @@ func (parser *Parser) getEngineInfo(fun types.FuncType) {
 			}
 
 			imp := types.NewImported(file, sel, nil)
-			if imp == nil {
-				return true
-			}
 
 			if len(call.Args) < 1 {
 				return true
 			}
 
-			lit, ok := call.Args[0].(*ast.BasicLit)
-			if !ok {
-				return true
-			}
-
 			switch {
+			case imp.EqualTo(responseAsJSON):
+				var t = types.NewType(nil, "", call.Args[0], nil)
+
+				// TODO:
+				fmt.Print(t)
+			case imp.EqualTo(responseAsXML):
+				// TODO:
 			case imp.EqualTo(withPrefix):
+				lit, ok := call.Args[0].(*ast.BasicLit)
+				if !ok {
+					return true
+				}
+
 				parser.apiPrefix = strings.Trim(lit.Value, "\"")
 			case imp.EqualTo(engineNew):
+				lit, ok := call.Args[0].(*ast.BasicLit)
+				if !ok {
+					return true
+				}
+
 				var url = strings.Trim(lit.Value, "\"")
 
 				if len(url) > 0 && url[0] == ':' {

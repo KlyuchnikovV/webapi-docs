@@ -47,18 +47,21 @@ type Type interface {
 	Method(string) *FuncType
 	Fields() map[string]Type
 	File() *ast.File
+	GetDescription() string
+	SetDescription(string)
 
 	EqualTo(t Type) bool
 	Implements(InterfaceType) bool
 	SchemaType() SchemaType
 }
 
-func NewType(file *ast.File, name string, ts *ast.Expr, tag *ast.BasicLit) Type {
+// TODO: review params
+func NewType(file *ast.File, name string, ts ast.Expr, tag *ast.BasicLit) Type {
 	var result Type
 
-	switch typed := (*ts).(type) {
+	switch typed := ts.(type) {
 	case *ast.ArrayType:
-		result = NewArray(file, name, typed, &typed.Elt, tag)
+		result = NewArray(file, name, typed, typed.Elt, tag)
 	case *ast.StructType:
 		result = NewStruct(file, name, typed, tag)
 	case *ast.InterfaceType:
@@ -68,29 +71,31 @@ func NewType(file *ast.File, name string, ts *ast.Expr, tag *ast.BasicLit) Type 
 	case *ast.SelectorExpr:
 		result = NewImported(file, typed, tag)
 	case *ast.StarExpr:
-		result = NewType(file, name, &typed.X, tag)
+		result = NewType(file, name, typed.X, tag)
 	case *ast.MapType:
 		result = NewMap(file, name, typed, tag)
 	case *ast.FuncType:
-		result = NewFunc(file, typed, name, nil, tag)
+		result = NewFunc(file, name, typed, nil, tag)
 	case *ast.Ellipsis:
-		result = NewType(file, name, &typed.Elt, tag)
+		result = NewType(file, name, typed.Elt, tag)
 	case *ast.ChanType:
-		result = NewType(file, name, &typed.Value, tag)
+		result = NewType(file, name, typed.Value, tag)
 	case *ast.UnaryExpr:
-		result = NewType(file, name, &typed.X, tag)
+		result = NewType(file, name, typed.X, tag)
 	case *ast.CompositeLit:
-		result = NewType(file, name, &typed.Type, tag)
-	case *ast.CallExpr:
-		result = NewType(file, name, &typed.Fun, tag)
+		result = NewType(file, name, typed.Type, tag)
+	// case *ast.CallExpr:
+	// 	result = NewType(file, name, &typed.Fun, tag)
 	case *ast.IndexExpr:
-		result = NewType(file, name, &typed.X, tag)
+		result = NewType(file, name, typed.X, tag)
 	case *ast.FuncLit:
-		result = NewFunc(file, typed.Type, name, nil, tag)
+		result = NewFunc(file, name, typed.Type, nil, tag)
 	case *ast.BinaryExpr:
-		result = NewType(file, name, &typed.X, tag)
+		result = NewType(file, name, typed.X, tag)
 	case *ast.BasicLit:
 		result = NewBasicFromBasicLit(file, name, typed, tag)
+	case *ast.CallExpr:
+		result = NewCall(file, name, typed, nil)
 	default:
 		panic(typed)
 	}
@@ -104,13 +109,41 @@ func NewTypeFromField(file *ast.File, field *ast.Field) (string, Type) {
 		name = field.Names[0].Name
 	}
 
-	var t = NewType(file, name, &field.Type, field.Tag)
+	var t = NewType(file, name, field.Type, field.Tag)
 	if name == "" {
 		name = t.Name()
 	}
 
 	return name, t
 }
+
+// func NewTypeFromStmt(file *ast.File, stmt ast.Stmt) (string, Type) {
+// 	switch typed := stmt.(type) {
+// 	case *ast.AssignStmt:
+// 	case *ast.DeclStmt:
+// 	case *ast.ExprStmt:
+// 	case *ast.ReturnStmt:
+// 		// case *ast.BadStmt:
+// 	// case *ast.BlockStmt:
+// 	// case *ast.BranchStmt:
+// 	// case *ast.CaseClause:
+// 	// case *ast.CommClause:
+// 	// case *ast.DeferStmt:
+// 	// case *ast.EmptyStmt:
+// 	// case *ast.ForStmt:
+// 	// case *ast.GoStmt:
+// 	// case *ast.IfStmt:
+// 	// case *ast.IncDecStmt:
+// 	// case *ast.LabeledStmt:
+// 	// case *ast.RangeStmt:
+// 	// case *ast.SelectStmt:
+// 	// case *ast.SendStmt:
+// 	// case *ast.SwitchStmt:
+// 	// case *ast.TypeSwitchStmt:
+// 	default:
+// 		panic(typed)
+// 	}
+// }
 
 type typeBase struct {
 	name   string
@@ -173,6 +206,14 @@ func newTypeBase(file *ast.File, name string, tags *ast.BasicLit, t SchemaType) 
 
 func (tb typeBase) Name() string {
 	return tb.name
+}
+
+func (tb typeBase) GetDescription() string {
+	return tb.Description
+}
+
+func (tb *typeBase) SetDescription(desc string) {
+	tb.Description = desc
 }
 
 func (tb typeBase) AddMethod(f FuncType) {

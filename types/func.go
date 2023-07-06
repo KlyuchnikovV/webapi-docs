@@ -1,7 +1,6 @@
 package types
 
 import (
-	"fmt"
 	"go/ast"
 )
 
@@ -16,7 +15,7 @@ type FuncType struct {
 	decl *ast.FuncType
 }
 
-func NewFunc(file *ast.File, decl *ast.FuncType, name string, body []ast.Stmt, tag *ast.BasicLit) FuncType {
+func NewFunc(file *ast.File, name string, decl *ast.FuncType, body []ast.Stmt, tag *ast.BasicLit) FuncType {
 	var result = FuncType{
 		typeBase: newTypeBase(file, name, tag, EmptySchemaType),
 
@@ -40,7 +39,7 @@ func NewFunc(file *ast.File, decl *ast.FuncType, name string, body []ast.Stmt, t
 		}
 	}
 
-	result.ReturnStatements2()
+	// result.ReturnStatements2()
 
 	return result
 }
@@ -56,7 +55,7 @@ func NewMethodFromField(file *ast.File, field *ast.Field) (string, *FuncType) {
 		return name, nil
 	}
 
-	var t = NewFunc(file, ft, name, nil, nil)
+	var t = NewFunc(file, name, ft, nil, nil)
 	if name == "" {
 		name = t.Name()
 	}
@@ -127,72 +126,137 @@ func (f FuncType) Implements(it InterfaceType) bool {
 	return f.typeBase.EqualTo(method.typeBase)
 }
 
-func (f FuncType) ReturnStatements2() []ReturnStatement {
-	var returns = make([]ReturnStatement, 0)
+func (f FuncType) GetBody() []Statement {
+	var result = make([]Statement, 0)
 
 	for _, stmt := range f.Body {
-		ast.Inspect(stmt, func(n ast.Node) bool {
-			ret, ok := n.(*ast.ReturnStmt)
-			if !ok {
-				return true
-			}
-
-			result := NewReturn(f.file, *ret)
-			if result == nil {
-				return true
-			}
-
-			returns = append(returns, *result)
-			return false
-		})
+		switch typed := stmt.(type) {
+		case *ast.AssignStmt:
+		case *ast.DeclStmt:
+		case *ast.ExprStmt:
+		case *ast.ReturnStmt:
+		// case *ast.BadStmt:
+		// case *ast.BlockStmt:
+		// case *ast.BranchStmt:
+		// case *ast.CaseClause:
+		// case *ast.CommClause:
+		// case *ast.DeferStmt:
+		// case *ast.EmptyStmt:
+		// case *ast.ForStmt:
+		// case *ast.GoStmt:
+		// case *ast.IfStmt:
+		// case *ast.IncDecStmt:
+		// case *ast.LabeledStmt:
+		// case *ast.RangeStmt:
+		// case *ast.SelectStmt:
+		// case *ast.SendStmt:
+		// case *ast.SwitchStmt:
+		// case *ast.TypeSwitchStmt:
+		default:
+			panic(typed)
+		}
 	}
 
-	return returns
+	return result
 }
 
-type ReturnStatement struct {
-	t Type
+type Statement interface{}
+
+// func (f FuncType) ReturnStatements2() []ReturnStatement {
+// 	var returns = make([]ReturnStatement, 0)
+
+// 	for _, stmt := range f.Body {
+// 		ast.Inspect(stmt, func(n ast.Node) bool {
+// 			ret, ok := n.(*ast.ReturnStmt)
+// 			if !ok {
+// 				return true
+// 			}
+
+// 			result := NewReturn(f.file, *ret)
+// 			if result == nil {
+// 				return true
+// 			}
+
+// 			returns = append(returns, *result)
+// 			return false
+// 		})
+// 	}
+
+// 	return returns
+// }
+
+// type ReturnStatement struct {
+// 	t Type
+// }
+
+// func NewReturn(file *ast.File, statements ast.ReturnStmt) *ReturnStatement {
+// 	if len(statements.Results) != 1 {
+// 		return nil // Not webapi response
+// 	}
+
+// 	var result = ReturnStatement{
+// 		t: NewType(file, "", &statements.Results[0], nil),
+// 	}
+
+// 	fmt.Printf("%#v - %t\n", result.t, result.t)
+
+// 	// switch typed := statements.Results[0].(type) {
+// 	// case *ast.BasicLit:
+// 	// 	result.t = NewBasicFromBasicLit(file, "", typed, nil)
+// 	// 	fmt.Printf("result is %#v - %T\n", result.t, result.t)
+// 	// case *ast.CompositeLit:
+// 	// 	result.t = NewType(file, "", &statements.Results[0], nil)
+// 	// 	fmt.Printf("result is %#v - %T\n", result.t, result.t)
+// 	// case *ast.CallExpr:
+// 	// 	selector, ok := typed.Fun.(*ast.SelectorExpr)
+// 	// 	if !ok {
+// 	// 		panic("wrong")
+// 	// 	}
+
+// 	// 	var imported = NewImported(file, selector, nil)
+
+// 	// 	if !imported.IsWebAPI() {
+// 	// 		break
+// 	// 	}
+
+// 	// 	fmt.Printf("func is %s, args are:\n", imported.name)
+// 	// 	for i, arg := range typed.Args {
+// 	// 		fmt.Printf("	%d - %#v\n", i, arg)
+// 	// 	}
+
+// 	// 	result.t = imported
+// 	// default:
+// 	// 	panic(fmt.Sprintf("%v - %T\n", typed, typed))
+// 	// }
+
+// 	return nil //statements.Results
+// }
+
+type Call struct {
+	*typeBase
+
+	Call       Type
+	Parameters []Type
+
+	decl *ast.CallExpr
 }
 
-func NewReturn(file *ast.File, statements ast.ReturnStmt) *ReturnStatement {
-	if len(statements.Results) != 1 {
-		return nil // Not webapi response
+func NewCall(file *ast.File, name string, decl *ast.CallExpr, tag *ast.BasicLit) Call {
+	var result = Call{
+		typeBase: newTypeBase(file, name, tag, EmptySchemaType),
+
+		Call:       NewType(file, name, decl.Fun, tag),
+		Parameters: make([]Type, len(decl.Args)),
+		decl:       decl,
 	}
 
-	var result = ReturnStatement{
-		t: NewType(file, "", &statements.Results[0], nil),
+	for i := range decl.Args {
+		result.Parameters[i] = NewType(file, "", decl.Args[i], nil)
 	}
 
-	fmt.Printf("%#v - %t\n", result.t, result.t)
+	return result
+}
 
-	// switch typed := statements.Results[0].(type) {
-	// case *ast.BasicLit:
-	// 	result.t = NewBasicFromBasicLit(file, "", typed, nil)
-	// 	fmt.Printf("result is %#v - %T\n", result.t, result.t)
-	// case *ast.CompositeLit:
-	// 	result.t = NewType(file, "", &statements.Results[0], nil)
-	// 	fmt.Printf("result is %#v - %T\n", result.t, result.t)
-	// case *ast.CallExpr:
-	// 	selector, ok := typed.Fun.(*ast.SelectorExpr)
-	// 	if !ok {
-	// 		panic("wrong")
-	// 	}
-
-	// 	var imported = NewImported(file, selector, nil)
-
-	// 	if !imported.IsWebAPI() {
-	// 		break
-	// 	}
-
-	// 	fmt.Printf("func is %s, args are:\n", imported.name)
-	// 	for i, arg := range typed.Args {
-	// 		fmt.Printf("	%d - %#v\n", i, arg)
-	// 	}
-
-	// 	result.t = imported
-	// default:
-	// 	panic(fmt.Sprintf("%v - %T\n", typed, typed))
-	// }
-
-	return nil //statements.Results
+func (call Call) Decl() *ast.CallExpr {
+	return call.decl
 }

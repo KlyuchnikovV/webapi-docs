@@ -10,6 +10,7 @@ import (
 	"github.com/KlyuchnikovV/webapi-docs/parser"
 )
 
+// TODO: apply middlewares as AsIsResponse
 // TODO: Rename to smth like gogo
 // TODO: merge objects and types
 // TODO: move on our type definitions and cache

@@ -45,12 +45,13 @@ func (srv *Service) Parse() error {
 
 	var returns = routers.ReturnStatements()
 	if len(returns) != 1 && len(returns[0].Results) != 1 {
-		return fmt.Errorf("routers not implemented")
+		return fmt.Errorf("routers are not implemented")
 	}
 
+	// TODO:
 	composite, ok := returns[0].Results[0].(*ast.CompositeLit)
 	if !ok {
-		return fmt.Errorf("not composite")
+		return fmt.Errorf("not composite lit")
 	}
 
 	for _, route := range composite.Elts {
@@ -74,13 +75,28 @@ func (srv *Service) Parse() error {
 }
 
 func (srv *Service) parseRoute(path string, value *ast.CallExpr) error {
-	var route = types.NewRoute(srv.servicePrefix)
+	var (
+		file     = srv.receiver.File()
+		route    = types.NewRoute(srv.servicePrefix)
+		handlers = []types.RouteOptionHanlder{
+			RouteDescriptionHandler(file),
+			ParameterHandler(srv, /*ParameterDescriptionHandler(file)*/),
+			BodyHandler(srv, /*ParameterDescriptionHandler(file)*/),
+		}
+	)
 
 	for _, arg := range value.Args {
 		switch typed := arg.(type) {
 		case *ast.CallExpr:
-			if err := srv.ParseParameter(route, *typed); err != nil {
-				return err
+			call, ok := types.NewType(file, "", arg, nil).(types.Call)
+			if !ok {
+				return nil
+			}
+
+			for _, handler := range handlers {
+				if err := handler(route, call); err != nil {
+					return err
+				}
 			}
 		case *ast.SelectorExpr:
 			var returns = srv.receiver.Method(typed.Sel.Name).ReturnStatements()
