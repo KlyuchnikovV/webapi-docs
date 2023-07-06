@@ -3,16 +3,11 @@ package types
 import (
 	"encoding/json"
 	"go/ast"
+	"regexp"
 	"strings"
 )
 
 type (
-	Schema interface {
-		// TODO: review methods list
-		SchemaType() string
-		EqualTo(Schema) bool
-	}
-
 	OpenAPISpec struct {
 		Openapi    string                      `json:"openapi"`
 		Info       Info                        `json:"info"`
@@ -46,27 +41,27 @@ func NewOpenAPISpec(servers ...ServerInfo) *OpenAPISpec {
 
 type Type interface {
 	Name() string
-	Tag() string
+	Tag(string) string
 	AddMethod(FuncType)
-	AddConstructor(FuncType)
-
 	Field(string) Type
 	Method(string) *FuncType
 	Fields() map[string]Type
-	Constructors() []FuncType
 	File() *ast.File
+	GetDescription() string
+	SetDescription(string)
 
 	EqualTo(t Type) bool
 	Implements(InterfaceType) bool
-	Schema() Schema
+	SchemaType() SchemaType
 }
 
-func NewType(file *ast.File, name string, ts *ast.Expr, tag *ast.BasicLit) Type {
+// TODO: review params
+func NewType(file *ast.File, name string, ts ast.Expr, tag *ast.BasicLit) Type {
 	var result Type
 
-	switch typed := (*ts).(type) {
+	switch typed := ts.(type) {
 	case *ast.ArrayType:
-		result = NewArray(file, name, typed, &typed.Elt, tag)
+		result = NewArray(file, name, typed, typed.Elt, tag)
 	case *ast.StructType:
 		result = NewStruct(file, name, typed, tag)
 	case *ast.InterfaceType:
@@ -76,29 +71,31 @@ func NewType(file *ast.File, name string, ts *ast.Expr, tag *ast.BasicLit) Type 
 	case *ast.SelectorExpr:
 		result = NewImported(file, typed, tag)
 	case *ast.StarExpr:
-		result = NewType(file, name, &typed.X, tag)
+		result = NewType(file, name, typed.X, tag)
 	case *ast.MapType:
 		result = NewMap(file, name, typed, tag)
 	case *ast.FuncType:
-		result = NewFunc(file, typed, name, nil, tag)
+		result = NewFunc(file, name, typed, nil, tag)
 	case *ast.Ellipsis:
-		result = NewType(file, name, &typed.Elt, tag)
+		result = NewType(file, name, typed.Elt, tag)
 	case *ast.ChanType:
-		result = NewType(file, name, &typed.Value, tag)
+		result = NewType(file, name, typed.Value, tag)
 	case *ast.UnaryExpr:
-		result = NewType(file, name, &typed.X, tag)
+		result = NewType(file, name, typed.X, tag)
 	case *ast.CompositeLit:
-		result = NewType(file, name, &typed.Type, tag)
-	case *ast.CallExpr:
-		result = NewType(file, name, &typed.Fun, tag)
+		result = NewType(file, name, typed.Type, tag)
+	// case *ast.CallExpr:
+	// 	result = NewType(file, name, &typed.Fun, tag)
 	case *ast.IndexExpr:
-		result = NewType(file, name, &typed.X, tag)
+		result = NewType(file, name, typed.X, tag)
 	case *ast.FuncLit:
-		result = NewFunc(file, typed.Type, name, nil, tag)
+		result = NewFunc(file, name, typed.Type, nil, tag)
 	case *ast.BinaryExpr:
-		result = NewType(file, name, &typed.X, tag)
+		result = NewType(file, name, typed.X, tag)
 	case *ast.BasicLit:
 		result = NewBasicFromBasicLit(file, name, typed, tag)
+	case *ast.CallExpr:
+		result = NewCall(file, name, typed, nil)
 	default:
 		panic(typed)
 	}
@@ -112,7 +109,7 @@ func NewTypeFromField(file *ast.File, field *ast.Field) (string, Type) {
 		name = field.Names[0].Name
 	}
 
-	var t = NewType(file, name, &field.Type, field.Tag)
+	var t = NewType(file, name, field.Type, field.Tag)
 	if name == "" {
 		name = t.Name()
 	}
@@ -120,50 +117,107 @@ func NewTypeFromField(file *ast.File, field *ast.Field) (string, Type) {
 	return name, t
 }
 
+// func NewTypeFromStmt(file *ast.File, stmt ast.Stmt) (string, Type) {
+// 	switch typed := stmt.(type) {
+// 	case *ast.AssignStmt:
+// 	case *ast.DeclStmt:
+// 	case *ast.ExprStmt:
+// 	case *ast.ReturnStmt:
+// 		// case *ast.BadStmt:
+// 	// case *ast.BlockStmt:
+// 	// case *ast.BranchStmt:
+// 	// case *ast.CaseClause:
+// 	// case *ast.CommClause:
+// 	// case *ast.DeferStmt:
+// 	// case *ast.EmptyStmt:
+// 	// case *ast.ForStmt:
+// 	// case *ast.GoStmt:
+// 	// case *ast.IfStmt:
+// 	// case *ast.IncDecStmt:
+// 	// case *ast.LabeledStmt:
+// 	// case *ast.RangeStmt:
+// 	// case *ast.SelectStmt:
+// 	// case *ast.SendStmt:
+// 	// case *ast.SwitchStmt:
+// 	// case *ast.TypeSwitchStmt:
+// 	default:
+// 		panic(typed)
+// 	}
+// }
+
 type typeBase struct {
 	name   string
 	fields map[string]Type
 	file   *ast.File
-	tag    string
+	tags   map[string]string
 
-	constructors []FuncType
+	Type        SchemaType `json:"type"`
+	Description string     `json:"description,omitempty"`
+	Example     string     `json:"example,omitempty"`
+	Required    bool       `json:"required,omitempty"`
 }
 
 func (tb typeBase) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Name   string
-		Fields map[string]Type
+		Type        SchemaType `json:"type"`
+		Description string     `json:"description,omitempty"`
+		Example     string     `json:"example,omitempty"`
+		Required    bool       `json:"required,omitempty"`
 	}{
-		Name:   tb.name,
-		Fields: tb.fields,
+		Type:        tb.Type,
+		Description: tb.Description,
+		Example:     tb.Example,
+		Required:    tb.Required,
 	})
 }
 
-func newTypeBase(file *ast.File, name string, tag *ast.BasicLit) *typeBase {
-	var t string
-	if tag != nil {
-		t = strings.Trim(strings.TrimPrefix(tag.Value, "`json:"), "\"`")
+var tagRegex = regexp.MustCompile(`\b.+?:".+?"`)
+
+func newTypeBase(file *ast.File, name string, tags *ast.BasicLit, t SchemaType) *typeBase {
+	var result = typeBase{
+		name:   name,
+		fields: make(map[string]Type),
+		file:   file,
+		tags:   make(map[string]string),
+		Type:   t,
 	}
 
-	return &typeBase{
-		name:         name,
-		fields:       make(map[string]Type),
-		file:         file,
-		constructors: make([]FuncType, 0),
-		tag:          t,
+	if tags == nil {
+		return &result
 	}
+
+	p := tagRegex.FindAllString(strings.Trim(tags.Value, "`"), -1)
+	for _, piece := range p {
+		var pieces = strings.Split(piece, ":")
+
+		result.tags[strings.Trim(pieces[0], `"`)] = strings.Trim(pieces[1], `"`)
+	}
+
+	tag, ok := result.tags["json"]
+	if ok {
+		result.Required = !strings.Contains(tag, "omitempty")
+	}
+
+	result.Description = result.tags["description"]
+	result.Example = result.tags["example"]
+
+	return &result
 }
 
 func (tb typeBase) Name() string {
 	return tb.name
 }
 
-func (tb typeBase) AddMethod(f FuncType) {
-	tb.fields[f.Name()] = f
+func (tb typeBase) GetDescription() string {
+	return tb.Description
 }
 
-func (tb *typeBase) AddConstructor(f FuncType) {
-	tb.constructors = append(tb.constructors, f)
+func (tb *typeBase) SetDescription(desc string) {
+	tb.Description = desc
+}
+
+func (tb typeBase) AddMethod(f FuncType) {
+	tb.fields[f.Name()] = f
 }
 
 func (tb typeBase) Field(name string) Type {
@@ -198,8 +252,16 @@ func (tb typeBase) Fields() map[string]Type {
 	return fields
 }
 
-func (tb typeBase) Constructors() []FuncType {
-	return tb.constructors
+func (tb typeBase) Methods() map[string]Type {
+	var fields = make(map[string]Type)
+
+	for name, field := range tb.fields {
+		if _, ok := field.(FuncType); ok {
+			fields[name] = field
+		}
+	}
+
+	return fields
 }
 
 func (tb typeBase) File() *ast.File {
@@ -217,11 +279,25 @@ func (tb typeBase) EqualTo(t Type) bool {
 		}
 	}
 
-	return true
+	base, ok := t.(*typeBase)
+	if !ok {
+		return false
+	}
+
+	return tb.Type == base.Type &&
+		tb.Description == base.Description &&
+		tb.Example == base.Example &&
+		tb.Required == base.Required
 }
 
 func (tb typeBase) Implements(it InterfaceType) bool {
-	for name, field := range it.Fields() {
+	var cache = make(map[string]bool)
+
+	for method := range it.fields {
+		cache[method] = false
+	}
+
+	for name, field := range it.Methods() {
 		method, ok := field.(FuncType)
 		if !ok {
 			continue
@@ -240,24 +316,33 @@ func (tb typeBase) Implements(it InterfaceType) bool {
 		if !tbMethod.EqualTo(method) {
 			return false
 		}
+
+		cache[tbMethod.name] = true
+	}
+
+	for _, ok := range cache {
+		if !ok {
+			return false
+		}
 	}
 
 	return true
 }
 
-func (tb typeBase) Schema() Schema {
-	return nil
+func (tb typeBase) SchemaType() SchemaType {
+	return tb.Type
 }
 
-func (tb typeBase) Tag() string {
-	if tb.tag == "" {
-		return tb.name
+func (tb typeBase) Tag(name string) string {
+	if value, ok := tb.tags[name]; ok {
+		return value
 	}
-	return tb.tag
+
+	return ""
 }
 
 type Components struct {
-	Schemas       map[string]Schema      `json:"schemas,omitempty"`
+	Schemas       map[string]Type        `json:"schemas,omitempty"`
 	Parameters    map[string]IParameter  `json:"parameters,omitempty"`
 	RequestBodies map[string]RequestBody `json:"requestBodies,omitempty"`
 	Responses     map[string]Response    `json:"responses,omitempty"`
@@ -267,7 +352,7 @@ type Components struct {
 
 func NewComponents() Components {
 	return Components{
-		Schemas:        make(map[string]Schema),
+		Schemas:        make(map[string]Type),
 		Parameters:     make(map[string]IParameter),
 		Responses:      make(map[string]Response),
 		RequestBodies:  make(map[string]RequestBody),
@@ -361,6 +446,7 @@ type Route struct {
 	Parameters  []IParameter       `json:"parameters,omitempty"`
 	RequestBody *Reference         `json:"requestBody,omitempty"`
 	Responses   map[int]*Reference `json:"responses"`
+	Description string             `json:"description,omitempty"`
 }
 
 func NewRoute(tags ...string) *Route {
@@ -387,6 +473,8 @@ func getBaseTypeAlias(expr ast.Expr, i int) string {
 		}
 
 		return typed.Name
+	case *ast.StarExpr:
+		return getBaseTypeAlias(typed.X, i)
 	}
 
 	return ""
@@ -423,3 +511,15 @@ func getBaseTypeAliasFromObj(obj ast.Object, i int) string {
 
 	return ""
 }
+
+type SchemaType string
+
+const (
+	EmptySchemaType   SchemaType = ""
+	ArraySchemaType   SchemaType = "array"
+	NumberSchemaType  SchemaType = "number"
+	ObjectSchemaType  SchemaType = "object"
+	StringSchemaType  SchemaType = "string"
+	IntegerSchemaType SchemaType = "integer"
+	BooleanSchemaType SchemaType = "boolean"
+)

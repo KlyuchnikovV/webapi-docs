@@ -7,7 +7,6 @@ import (
 
 	"github.com/KlyuchnikovV/webapi-docs/constants"
 	"github.com/KlyuchnikovV/webapi-docs/types"
-	"github.com/KlyuchnikovV/webapi-docs/utils"
 )
 
 type (
@@ -34,23 +33,26 @@ type (
 		Minimum     int              `json:"minimum,omitempty"`
 		Description string           `json:"description,omitempty"`
 		RequestBody *types.Reference `json:"requestBody,omitempty"`
-		Schema      types.Schema     `json:"schema,omitempty"`
+		Schema      types.Type       `json:"schema,omitempty"`
 	}
 )
 
-func NewParameter(paramType string, t string, args []ast.Expr) Parameter {
-	var (
-		fieldType = utils.ConvertFieldType(constants.TypeParamsMap[t])
-		parameter = Parameter{
-			In:       paramType,
-			Required: true,
-			Schema: types.ObjectSchema{
-				Type: fieldType,
-			},
-		}
-	)
+// func NewParameter(paramType string, t string, args []ast.Expr) Parameter {
+func NewParameter(paramType string, t types.Call) Parameter {
+	var parameter = Parameter{
+		In:       paramType,
+		Required: true,
+		Schema: types.NewSimpleBasicType(
+			types.ConvertFieldType(constants.TypeParamsMap[t.Call.Name()]),
+		),
+		Description: t.Call.GetDescription(),
+		//  types.ObjectSchema{
+		// 	// TODO: nil as tags?
+		// 	BaseSchema: types.NewSchema(types.ConvertFieldType(constants.TypeParamsMap[t]), nil),
+		// },
+	}
 
-	for _, arg := range args {
+	for _, arg := range t.Decl().Args {
 		switch argument := arg.(type) {
 		case *ast.BasicLit:
 			if parameter.Name == "" {
@@ -96,7 +98,7 @@ func (i Parameter) NameParam() string {
 }
 
 func (i Parameter) Type() string {
-	return i.Schema.SchemaType()
+	return string(i.Schema.SchemaType())
 }
 
 func (i Parameter) EqualTo(p interface{}) bool {

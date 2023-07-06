@@ -1,54 +1,63 @@
 package types
 
-import "go/ast"
+import (
+	"encoding/json"
+	"go/ast"
+	"strings"
+)
 
 type StructType struct {
 	*typeBase
 
 	StructType *ast.StructType
+
+	// *BaseSchema
+	Properties map[string]Type `json:"properties,omitempty"`
 }
 
 func NewStruct(file *ast.File, name string, str *ast.StructType, tag *ast.BasicLit) StructType {
 	var result = StructType{
-		typeBase: newTypeBase(file, name, tag),
+		typeBase: newTypeBase(file, name, tag, ObjectSchemaType),
 
 		StructType: str,
+		Properties: make(map[string]Type),
 	}
 
 	for _, field := range str.Fields.List {
 		name, t := NewTypeFromField(file, field)
+		// TODO: what if we want xml schema
+		tagName := strings.TrimSuffix(t.Tag("json"), ",omitempty")
+
+		if tagName == "" {
+			tagName = name
+		}
 
 		result.fields[name] = t
+		result.Properties[tagName] = t
 	}
 
 	return result
 }
 
-func (s StructType) Schema() Schema {
-	var props = make(map[string]Schema)
-
-	for _, item := range s.Fields() {
-		props[item.Tag()] = item.Schema()
-	}
-
-	return &ObjectSchema{
-		Type:       "object",
-		Properties: props,
-	}
+func (o StructType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Type        SchemaType      `json:"type"`
+		Description string          `json:"description,omitempty"`
+		Example     string          `json:"example,omitempty"`
+		Required    bool            `json:"required,omitempty"`
+		Properties  map[string]Type `json:"properties,omitempty"`
+	}{
+		Type:        o.Type,
+		Description: o.Description,
+		Example:     o.Example,
+		Required:    o.Required,
+		Properties:  o.Properties,
+	})
 }
 
-type ObjectSchema struct {
-	Type       string            `json:"type"`
-	Properties map[string]Schema `json:"properties,omitempty"`
-}
-
-func (o ObjectSchema) EqualTo(s Schema) bool {
-	os, ok := s.(ObjectSchema)
+func (o StructType) EqualSchema(s Type) bool {
+	os, ok := s.(StructType)
 	if !ok {
-		return false
-	}
-
-	if o.Type != os.Type {
 		return false
 	}
 
@@ -64,8 +73,4 @@ func (o ObjectSchema) EqualTo(s Schema) bool {
 	}
 
 	return true
-}
-
-func (o ObjectSchema) SchemaType() string {
-	return o.Type
 }

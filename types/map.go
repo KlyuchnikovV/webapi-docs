@@ -13,10 +13,10 @@ type MapType struct {
 
 func NewMap(file *ast.File, name string, str *ast.MapType, tag *ast.BasicLit) MapType {
 	return MapType{
-		typeBase: newTypeBase(file, name, nil),
+		typeBase: newTypeBase(file, name, nil, EmptySchemaType),
 
-		Key:   NewType(file, "", &str.Key, nil),
-		Value: NewType(file, "", &str.Value, nil),
+		Key:   NewType(file, "", str.Key, nil),
+		Value: NewType(file, "", str.Value, nil),
 
 		ts: str,
 	}
@@ -47,5 +47,5 @@ func (m MapType) EqualTo(t Type) bool {
 		return false
 	}
 
-	return m.typeBase.EqualTo(mapType)
+	return m.typeBase.EqualTo(mapType.typeBase)
 }
